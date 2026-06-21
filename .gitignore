@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+.env
+generated_statements/
+*.log
+.DS_Store
+*.db
+*.sqlite3
+check
+test_groq.py
+encrypt_existing_data.py
+import_data_to_mongodb.py
+generate_mock_data.py
+mock_users.json
+mock_transactions.json
