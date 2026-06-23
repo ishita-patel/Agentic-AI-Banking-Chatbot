@@ -363,6 +363,29 @@ st.markdown("""
         margin-left: auto !important;
         display: block !important;
     }
+
+    /* Upload section styling */
+    .upload-section {
+        background: #0d0d0d;
+        border: 1px dashed #dc2626;
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .upload-section .stFileUploader {
+        background: transparent;
+    }
+    
+    .agent-badge {
+        display: inline-block;
+        background: #dc2626;
+        color: white;
+        font-size: 0.6rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 10px;
+        margin-right: 0.25rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -445,23 +468,17 @@ assistant_chat_window = """
         
         const messagesContainer = document.getElementById('assistantMessages');
         
-        // Add user message
         const userMsgDiv = document.createElement('div');
         userMsgDiv.className = 'assistant-message user';
         userMsgDiv.textContent = message;
         messagesContainer.appendChild(userMsgDiv);
         
-        // Clear input
         input.value = '';
-        
-        // Scroll to bottom
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
         
-        // Simulate bot response after delay
         setTimeout(() => {
             const botMsgDiv = document.createElement('div');
             botMsgDiv.className = 'assistant-message bot';
-            
             const responses = [
                 "Thank you for reaching out. One of our representatives will assist you shortly.",
                 "I understand your concern. Please allow me a moment to connect you with the right team.",
@@ -480,45 +497,30 @@ assistant_chat_window = """
 """
 
 MOCK_USERS = {
-    "aarav.sharma": {
+    "pari.reddy": {
         "password": "pass123",
-        "user_id": "user_001",
-        "name": "Aarav Sharma",
-        "email": "aarav.sharma@aikobank.com",
-        "phone": "+91 98765 43210",
-        "account_type": "Premium Savings",
-        "savings_balance": 352610.77,
-        "checking_balance": 54578.84
+        "name": "Pari Reddy",
+        "user_id": "user_001"
     },
-    "priya.singh": {
+    "raj.sharma": {
         "password": "pass123",
-        "user_id": "user_002",
-        "name": "Priya Singh",
-        "email": "priya.singh@aikobank.com",
-        "phone": "+91 98765 43211",
-        "account_type": "Savings Plus",
-        "savings_balance": 12750.45,
-        "checking_balance": 3200.00
+        "name": "Raj Sharma",
+        "user_id": "user_002"
     },
-    "amit.patel": {
+    "myra.mishra": {
         "password": "pass123",
-        "user_id": "user_003",
-        "name": "Amit Patel",
-        "email": "amit.patel@aikobank.com",
-        "phone": "+91 98765 43212",
-        "account_type": "Corporate Account",
-        "savings_balance": 87500.00,
-        "checking_balance": 25000.00
+        "name": "Myra Mishra",
+        "user_id": "user_003"
     },
-    "ishita.patel": {
+    "manish.nair": {
         "password": "pass123",
-        "user_id": "user_004",
-        "name": "Ishita Patel",
-        "email": "ishita.patel@aikobank.com",
-        "phone": "+91 98765 43215",
-        "account_type": "Premium Savings",
-        "savings_balance": 425000.00,
-        "checking_balance": 75000.00
+        "name": "Manish Nair",
+        "user_id": "user_004"
+    },
+    "divya.verma": {
+        "password": "pass123",
+        "name": "Divya Verma",
+        "user_id": "user_005"
     }
 }
 
@@ -537,11 +539,38 @@ def init_session_state():
         st.session_state.pending_query = None
     if "show_profile" not in st.session_state:
         st.session_state.show_profile = False
+    if "has_documents" not in st.session_state:
+        st.session_state.has_documents = False
+    if "uploaded_files" not in st.session_state:
+        st.session_state.uploaded_files = []
+    if "agents_used" not in st.session_state:
+        st.session_state.agents_used = []
 
 def authenticate_user(username, password):
     if username in MOCK_USERS and MOCK_USERS[username]["password"] == password:
         return MOCK_USERS[username]["user_id"], MOCK_USERS[username]
     return None, None
+
+def fetch_user_profile(user_id, api_url):
+
+    try:
+
+        response = requests.get(
+            f"{api_url}/user/{user_id}",
+            timeout=30
+        )
+
+        if response.status_code == 200:
+
+            data = response.json()
+
+            if data.get("success"):
+                return data["user"]
+
+    except Exception as e:
+        print(f"Profile fetch error: {e}")
+
+    return None
 
 def logout():
     st.session_state.authenticated = False
@@ -551,61 +580,143 @@ def logout():
     st.session_state.messages = []
     st.session_state.pending_query = None
     st.session_state.show_profile = False
+    st.session_state.has_documents = False
+    st.session_state.uploaded_files = []
     st.rerun()
 
-def send_message_and_get_response(message, user_id, api_url):
+def send_message_and_get_response(message, user_id, api_url, has_documents=False):
+
     st.session_state.messages.append({
         "role": "user",
         "content": message,
         "timestamp": datetime.now().strftime("%H:%M")
     })
-    
+
     try:
+
+        print("\n======================================")
+        print("FRONTEND REQUEST")
+        print("API URL:", api_url)
+        print("USER ID:", user_id)
+        print("MESSAGE:", message)
+        print("HAS DOCUMENTS:", has_documents)
+        print("======================================\n")
+
         response = requests.post(
             f"{api_url}/chat",
-            json={"user_id": user_id, "message": message},
-            timeout=30
+            json={
+                "user_id": user_id,
+                "message": message,
+                "has_documents": has_documents
+            },
+            timeout=60
         )
-        
+
+        print("\n======================================")
+        print("STATUS CODE:", response.status_code)
+        print("RESPONSE TEXT:")
+        print(response.text)
+        print("======================================\n")
+
         if response.status_code == 200:
+
             data = response.json()
-            bot_response = data["response"]
-            
+
+            bot_response = data.get(
+                "response",
+                "No response returned"
+            )
+
+            agents_used = data.get(
+                "agents_used",
+                []
+            )
+
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": bot_response,
                 "timestamp": datetime.now().strftime("%H:%M")
             })
-            
+
+            st.session_state.agents_used = agents_used
+
             if "statement" in message.lower():
+
                 statement_response = requests.post(
                     f"{api_url}/statement",
-                    json={"user_id": user_id, "message": message}
+                    json={
+                        "user_id": user_id,
+                        "message": message
+                    },
+                    timeout=60
                 )
+
                 if statement_response.status_code == 200:
+
                     pdf_content = statement_response.content
-                    filename = f"statement_{user_id}_{datetime.now().strftime('%Y%m%d_H%M%S')}.pdf"
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+
+                    filename = (
+                        f"statement_{user_id}_"
+                        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                    )
+
+                    with tempfile.NamedTemporaryFile(
+                        delete=False,
+                        suffix=".pdf"
+                    ) as tmp:
+
                         tmp.write(pdf_content)
                         tmp_path = tmp.name
-                    st.session_state.pending_pdf = (tmp_path, filename)
+
+                    st.session_state.pending_pdf = (
+                        tmp_path,
+                        filename
+                    )
+
         elif response.status_code == 429:
+
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": "Daily interaction limit reached. Please try again tomorrow.",
+                "content": (
+                    "Daily interaction limit reached. "
+                    "Please try again tomorrow."
+                ),
                 "timestamp": datetime.now().strftime("%H:%M")
             })
-    except Exception:
+
+        else:
+
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": (
+                    f"Backend Error {response.status_code}\n\n"
+                    f"{response.text}"
+                ),
+                "timestamp": datetime.now().strftime("%H:%M")
+            })
+
+    except Exception as e:
+
+        print("\n======================================")
+        print("FRONTEND EXCEPTION")
+        print(type(e))
+        print(str(e))
+        print("======================================\n")
+
         st.session_state.messages.append({
             "role": "assistant",
-            "content": "Unable to connect to banking service. Please ensure the backend is running.",
+            "content": (
+                f"Connection Error:\n\n{str(e)}"
+            ),
             "timestamp": datetime.now().strftime("%H:%M")
         })
-    
+
     st.rerun()
 
 def render_header():
-    initial = st.session_state.user_info['name'][0].upper()
+    # Safely get initial with fallback
+    name = st.session_state.user_info.get("name", "User") if st.session_state.user_info else "User"
+    initial = name[0].upper() if name else "U"
     
     st.markdown('''
     <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 0.75rem; border-bottom: 1px solid #333333; margin-bottom: 1.5rem;">
@@ -628,67 +739,162 @@ def render_header():
             st.rerun()
 
 def show_profile_modal():
-    if st.session_state.get("show_profile", False):
+    if st.session_state.get("show_profile", False) and st.session_state.user_info:
+        # Safely get user info with fallbacks
+        name = st.session_state.user_info.get('name', 'User')
+        credit_score = st.session_state.user_info.get('credit_score', 'N/A')
+        user_id = st.session_state.user_id or 'N/A'
+        email = st.session_state.user_info.get('email', 'N/A')
+        
         st.markdown(f'''
         <div style="position: fixed; top: 80px; right: 20px; width: 280px; background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%); border-radius: 12px; border: 1px solid #dc2626; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); padding: 1rem; z-index: 1000;">
-            <div style="font-size: 1rem; font-weight: 600; color: #ffffff; margin-bottom: 0.5rem; border-bottom: 1px solid #333333; padding-bottom: 0.5rem;">{st.session_state.user_info['name']}</div>
-            <div style="font-size: 0.8rem; color: #888888; margin-bottom: 0.3rem;"><strong>Account:</strong> {st.session_state.user_info['account_type']}</div>
-            <div style="font-size: 0.8rem; color: #888888; margin-bottom: 0.3rem;"><strong>ID:</strong> {st.session_state.user_id}</div>
-            <div style="font-size: 0.8rem; color: #888888; margin-bottom: 0.8rem;"><strong>Email:</strong> {st.session_state.user_info['email']}</div>
+            <div style="font-size: 1rem; font-weight: 600; color: #ffffff; margin-bottom: 0.5rem; border-bottom: 1px solid #333333; padding-bottom: 0.5rem;">{name}</div>
+            <div style="font-size: 0.8rem; color: #888888; margin-bottom: 0.3rem;"><strong>Credit Score:</strong> {credit_score}</div>
+            <div style="font-size: 0.8rem; color: #888888; margin-bottom: 0.3rem;"><strong>ID:</strong> {user_id}</div>
+            <div style="font-size: 0.8rem; color: #888888; margin-bottom: 0.8rem;"><strong>Email:</strong> {email}</div>
         </div>
         ''', unsafe_allow_html=True)
 
 def login_page():
+    API_URL = "http://127.0.0.1:8000"
+
     col1, col2, col3 = st.columns([1, 2, 1])
-    
+
     with col2:
-        st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        st.markdown('<div class="login-title">Aiko Bank</div>', unsafe_allow_html=True)
-        st.markdown('<div style="text-align: center; margin-bottom: 1rem;"><p style="font-size: 0.85rem; color: #dc2626; font-style: italic;">Life\'s got 99 problems but banking ain\'t 1</p></div>', unsafe_allow_html=True)
-        
-        username = st.text_input("Username", placeholder="Enter your username", key="login_username", label_visibility="collapsed")
-        password = st.text_input("Password", type="password", placeholder="Enter your password", key="login_password", label_visibility="collapsed")
-        
-        if st.button("Sign In", use_container_width=True):
+
+        st.markdown(
+            '<div class="login-container">',
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            '<div class="login-title">Aiko Bank</div>',
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            '''
+            <div style="text-align:center;margin-bottom:1rem;">
+                <p style="font-size:0.85rem;color:#dc2626;font-style:italic;">
+                    Life's got 99 problems but banking ain't 1
+                </p>
+            </div>
+            ''',
+            unsafe_allow_html=True
+        )
+
+        username = st.text_input(
+            "Username",
+            placeholder="Enter your username",
+            key="login_username",
+            label_visibility="collapsed"
+        )
+
+        password = st.text_input(
+            "Password",
+            type="password",
+            placeholder="Enter your password",
+            key="login_password",
+            label_visibility="collapsed"
+        )
+
+        if st.button(
+            "Sign In",
+            use_container_width=True
+        ):
+
             if username and password:
-                user_id, user_info = authenticate_user(username, password)
+
+                user_id, user_info = authenticate_user(
+                    username,
+                    password
+                )
+
                 if user_id:
-                    st.session_state.authenticated = True
-                    st.session_state.user_id = user_id
-                    st.session_state.user_info = user_info
-                    st.session_state.session_id = str(uuid.uuid4())
-                    st.session_state.messages = []
-                    
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": f"Welcome, {user_info['name']}. Your banking assistant is ready. How may I assist you today?",
-                        "timestamp": datetime.now().strftime("%H:%M")
-                    })
-                    st.rerun()
+
+                    profile = fetch_user_profile(
+                        user_id,
+                        API_URL
+                    )
+
+                    if profile is None:
+
+                        st.error(
+                            "Could not fetch user profile from backend."
+                        )
+
+                    else:
+
+                        # Debug output to verify profile data
+                        print("\nPROFILE FROM BACKEND:")
+                        print(profile)
+                        print("\n")
+
+                        st.session_state.authenticated = True
+                        st.session_state.user_id = user_id
+                        st.session_state.user_info = profile
+                        st.session_state.session_id = str(uuid.uuid4())
+                        st.session_state.messages = []
+                        st.session_state.agents_used = []
+
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": (
+                                f"Welcome, {profile['name']}. "
+                                f"Your banking assistant is ready. "
+                                f"How may I assist you today?"
+                            ),
+                            "timestamp": datetime.now().strftime("%H:%M")
+                        })
+
+                        st.rerun()
+
                 else:
-                    st.error("Invalid credentials. Please try again.")
+
+                    st.error(
+                        "Invalid credentials. Please try again."
+                    )
+
             else:
-                st.warning("Please enter your credentials.")
-        
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        
+
+                st.warning(
+                    "Please enter your credentials."
+                )
+
+        st.markdown(
+            '''
+            <div class="info-text"
+                 style="text-align:center;margin-top:1rem;">
+                 24/7 Secure Banking Assistant
+            </div>
+            ''',
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            '</div>',
+            unsafe_allow_html=True
+        )
+
         with st.expander("Demo Access"):
+
             st.markdown("""
-            | Username | Password |
-            |----------|----------|
-            | aarav.sharma | pass123 |
-            | priya.singh | pass123 |
-            | amit.patel | pass123 |
-            | ishita.patel | pass123 |
-            """)
-        
-        st.markdown('<div class="info-text" style="text-align: center; margin-top: 1rem;">24/7 Secure Banking Assistant</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown(glow_footer, unsafe_allow_html=True)
+| Username | Password |
+|----------|----------|
+| pari.reddy | pass123 |
+| raj.sharma | pass123 |
+| myra.mishra | pass123 |
+| manish.nair | pass123 |
+| divya.verma | pass123 |
+""")
+
+    st.markdown(
+        glow_footer,
+        unsafe_allow_html=True
+    )
 
 def main_app():
-    API_URL = "http://localhost:8000"
+    API_URL = "http://127.0.0.1:8000"
     
     render_header()
     show_profile_modal()
@@ -700,72 +906,139 @@ def main_app():
     chat_col1, chat_col2 = st.columns([3, 1])
     
     with chat_col1:
-        st.markdown("### Banking Assistant")
+        st.markdown("### 💬 Banking Assistant")
+        st.caption("Ask anything - finance, travel, health, legal, document analysis...")
         
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
                 st.caption(msg["timestamp"])
         
+        # Show agents used if available
+        if st.session_state.agents_used and len(st.session_state.messages) > 0:
+            agents_text = " 🤖 " + " | ".join([f"<span class='agent-badge'>{a}</span>" for a in st.session_state.agents_used])
+            st.markdown(f'<div style="font-size: 0.7rem; color: #666; margin-top: -0.5rem; margin-bottom: 0.5rem;">{agents_text}</div>', unsafe_allow_html=True)
+        
         if hasattr(st.session_state, 'pending_pdf') and st.session_state.pending_pdf:
             tmp_path, filename = st.session_state.pending_pdf
             with open(tmp_path, "rb") as f:
                 st.download_button(
-                    label="Download Statement PDF",
+                    label="📄 Download Statement PDF",
                     data=f,
                     file_name=filename,
                     mime="application/pdf"
                 )
             st.session_state.pending_pdf = None
         
-        if prompt := st.chat_input("How can I help you today?"):
-            send_message_and_get_response(prompt, st.session_state.user_id, API_URL)
+        if prompt := st.chat_input("Ask anything..."):
+            send_message_and_get_response(
+                prompt,
+                st.session_state.user_id,
+                API_URL,
+                st.session_state.has_documents
+            )
     
     with chat_col2:
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-title">Account Snapshot</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-title">📎 Document Upload</div>', unsafe_allow_html=True)
+        
+        uploaded_file = st.file_uploader(
+            "Upload any document",
+            type=['pdf', 'docx', 'txt', 'xlsx', 'csv', 'png', 'jpg', 'jpeg'],
+            key="doc_uploader",
+            label_visibility="collapsed"
+        )
+        
+        if uploaded_file:
+            if st.button("📤 Process Document", use_container_width=True):
+                with st.spinner("Processing document..."):
+                    files = {"file": uploaded_file}
+                    try:
+                        response = requests.post(
+                            f"{API_URL}/upload?user_id={st.session_state.user_id}",
+                            files=files,
+                            timeout=60
+                        )
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            st.success(f"✅ Document processed successfully!")
+                            st.session_state.has_documents = True
+                            if uploaded_file.name not in st.session_state.uploaded_files:
+                                st.session_state.uploaded_files.append(uploaded_file.name)
+                            
+                            st.session_state.messages.append({
+                                "role": "assistant",
+                                "content": f"📄 Document '{uploaded_file.name}' uploaded and processed. You can now ask questions about this document.",
+                                "timestamp": datetime.now().strftime("%H:%M")
+                            })
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to process document: {response.text}")
+                    except Exception as e:
+                        st.error(f"Connection error: {e}")
+        
+        if st.session_state.uploaded_files:
+            st.markdown('<div style="margin-top: 0.75rem;"><div class="sidebar-title">📄 Uploaded Documents</div></div>', unsafe_allow_html=True)
+            for f in st.session_state.uploaded_files:
+                st.markdown(f'<div style="font-size: 0.75rem; color: #e5e5e5; padding: 0.25rem 0;">• {f}</div>', unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-title">💰 Account Snapshot</div>', unsafe_allow_html=True)
+        
+        # Safely get balances with fallback
+        savings_balance = st.session_state.user_info.get('savings_balance', 0) if st.session_state.user_info else 0
+        checking_balance = st.session_state.user_info.get('checking_balance', 0) if st.session_state.user_info else 0
         
         st.markdown(f'''
         <div class="balance-card">
             <div class="balance-title">Savings Account</div>
-            <div class="balance-amount">₹{st.session_state.user_info['savings_balance']:,.2f}</div>
+            <div class="balance-amount">₹{savings_balance:,.2f}</div>
         </div>
         <div class="balance-card">
             <div class="balance-title">Checking Account</div>
-            <div class="balance-amount">₹{st.session_state.user_info['checking_balance']:,.2f}</div>
+            <div class="balance-amount">₹{checking_balance:,.2f}</div>
         </div>
         ''', unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-title">Quick Services</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-title">⚡ Quick Actions</div>', unsafe_allow_html=True)
         
         actions = [
-            ("Check Balance", "What is my account balance?"),
-            ("Get Statement", "Show my last month statement"),
-            ("Personal Loan", "personal loan"),
-            ("Loan Eligibility", "check eligibility"),
-            ("EMI Calculator", "emi for 50000")
+            ("💰 Check Balance", "What is my account balance?"),
+            ("📄 Get Statement", "Show my last month statement"),
+            ("🏦 Personal Loan", "personal loan"),
+            ("📊 Loan Eligibility", "check eligibility"),
+            ("📈 EMI Calculator", "emi for 50000"),
+            ("✈️ Travel Plan", "Plan a trip to Japan for 20 days"),
+            ("📋 Analyze Document", "Analyze this document" + (" (upload first)" if not st.session_state.uploaded_files else ""))
         ]
         
         for label, query in actions:
             if st.button(label, key=f"action_{label}", use_container_width=True):
-                send_message_and_get_response(query, st.session_state.user_id, API_URL)
+                send_message_and_get_response(
+                    query,
+                    st.session_state.user_id,
+                    API_URL,
+                    st.session_state.has_documents
+                )
         
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-title">Session Information</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-title">📊 Session Information</div>', unsafe_allow_html=True)
         st.markdown(f'''
         <div class="user-detail"><span class="status-online"></span> Active Session</div>
         <div class="user-detail">ID: {st.session_state.session_id[:8] if st.session_state.session_id else 'N/A'}...</div>
         <div class="user-detail">Messages: {len(st.session_state.messages)}</div>
-        <div class="user-detail" style="margin-top: 0.5rem;">Aiko Bank v1.0</div>
+        <div class="user-detail" style="margin-top: 0.5rem; color: #dc2626;">Agentic AI v2.0</div>
         ''', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Floating Action Button and Assistant Chat Window
     st.markdown(fab_button, unsafe_allow_html=True)
     st.markdown(assistant_chat_window, unsafe_allow_html=True)
     
