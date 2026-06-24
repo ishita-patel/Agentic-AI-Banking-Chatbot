@@ -1,6 +1,3 @@
-print("LOADED: backend/orchestrator/orchestrator.py")
-# backend/orchestrator/orchestrator.py
-
 from typing import Dict, Any, List
 
 from backend.orchestrator.query_analyzer import QueryAnalyzer
@@ -33,9 +30,7 @@ class Orchestrator:
 
         self.conversation_memory = {}
 
-    # =====================================================
     # AGENT REGISTRY
-    # =====================================================
 
     def initialize_agents(self):
 
@@ -53,9 +48,7 @@ class Orchestrator:
             "rag": RAGAgent()
         }
 
-    # =====================================================
     # MEMORY
-    # =====================================================
 
     def get_history(self, user_id):
 
@@ -85,9 +78,7 @@ class Orchestrator:
             self.conversation_memory[user_id][-10:]
         )
 
-    # =====================================================
     # MAIN PROCESSOR
-    # =====================================================
 
     async def process(
         self,
@@ -112,25 +103,46 @@ class Orchestrator:
                 has_documents=has_documents,
                 history=history
             )
+            print("\n========== ANALYSIS ==========")
+            print(analysis)
+            print("==============================")
 
-            primary_domain = analysis.get(
-                "primary_domain",
-                "general"
-            )
+            # DOCUMENT MODE OVERRIDE
 
-            secondary_domains = analysis.get(
-                "secondary_domains",
-                []
-            )
+            if has_documents:
 
-            domains = []
+                print("\n========== DOCUMENT MODE ==========")
+                print("FORCING RAG ONLY")
+                print("===================================")
 
-            if primary_domain != "general":
-                domains.append(primary_domain)
+                domains = ["rag"]
 
-            domains.extend(secondary_domains)
+            # NORMAL ROUTING
 
-            domains = list(dict.fromkeys(domains))
+            else:
+
+                primary_domain = analysis.get(
+                    "primary_domain",
+                    "general"
+                )
+
+                secondary_domains = analysis.get(
+                    "secondary_domains",
+                    []
+                )
+
+                domains = []
+
+                if primary_domain != "general":
+                    domains.append(primary_domain)
+
+                domains.extend(secondary_domains)
+
+                domains = list(dict.fromkeys(domains))
+
+            print("\n========== DOMAINS ==========")
+            print(domains)
+            print("=============================")
 
             if not domains:
 
@@ -156,6 +168,9 @@ class Orchestrator:
 
             successful_agents = []
 
+            print("\n========== EXECUTING AGENTS ==========")
+            print(domains)
+            print("======================================")
             for domain in domains:
 
                 if domain not in self.agents:
@@ -197,9 +212,7 @@ class Orchestrator:
                         f"{domain} agent error: {e}"
                     )
 
-            # ---------------------------------
             # Fallback
-            # ---------------------------------
 
             if not agent_results:
 
@@ -221,17 +234,13 @@ class Orchestrator:
                     "agents_used": ["groq"]
                 }
 
-            # ---------------------------------
             # Single Agent
-            # ---------------------------------
 
             if len(agent_results) == 1:
 
                 final_response = agent_results[0]
 
-            # ---------------------------------
             # Multi Agent Synthesis
-            # ---------------------------------
 
             else:
 
@@ -271,9 +280,7 @@ class Orchestrator:
                 "agents_used": ["error"]
             }
 
-    # =====================================================
     # GENERAL CHAT
-    # =====================================================
 
     async def handle_general_query(
         self,
@@ -305,9 +312,7 @@ Respond naturally and conversationally.
             user_id="general_chat"
         )
 
-    # =====================================================
     # SYNTHESIS
-    # =====================================================
 
     async def synthesize_results(
         self,
@@ -340,9 +345,7 @@ Rules:
             user_id="synthesizer"
         )
 
-    # =====================================================
     # DOCUMENT UPLOAD
-    # =====================================================
 
     async def upload_document(
         self,
@@ -364,9 +367,7 @@ Rules:
             file_path
         )
 
-    # =====================================================
     # STATUS
-    # =====================================================
 
     def get_agent_status(self):
 

@@ -916,7 +916,7 @@ def main_app():
         
         # Show agents used if available
         if st.session_state.agents_used and len(st.session_state.messages) > 0:
-            agents_text = " 🤖 " + " | ".join([f"<span class='agent-badge'>{a}</span>" for a in st.session_state.agents_used])
+            agents_text = " " + " | ".join([f"<span class='agent-badge'>{a}</span>" for a in st.session_state.agents_used])
             st.markdown(f'<div style="font-size: 0.7rem; color: #666; margin-top: -0.5rem; margin-bottom: 0.5rem;">{agents_text}</div>', unsafe_allow_html=True)
         
         if hasattr(st.session_state, 'pending_pdf') and st.session_state.pending_pdf:
@@ -950,7 +950,7 @@ def main_app():
         )
         
         if uploaded_file:
-            if st.button("📤 Process Document", use_container_width=True):
+            if st.button("Process Document", use_container_width=True):
                 with st.spinner("Processing document..."):
                     files = {"file": uploaded_file}
                     try:
@@ -962,14 +962,14 @@ def main_app():
                         
                         if response.status_code == 200:
                             data = response.json()
-                            st.success(f"✅ Document processed successfully!")
+                            st.success(f"Document processed successfully!")
                             st.session_state.has_documents = True
                             if uploaded_file.name not in st.session_state.uploaded_files:
                                 st.session_state.uploaded_files.append(uploaded_file.name)
                             
                             st.session_state.messages.append({
                                 "role": "assistant",
-                                "content": f"📄 Document '{uploaded_file.name}' uploaded and processed. You can now ask questions about this document.",
+                                "content": f"Document '{uploaded_file.name}' uploaded and processed. You can now ask questions about this document.",
                                 "timestamp": datetime.now().strftime("%H:%M")
                             })
                             st.rerun()
@@ -1009,13 +1009,13 @@ def main_app():
         st.markdown('<div class="sidebar-title">⚡ Quick Actions</div>', unsafe_allow_html=True)
         
         actions = [
-            ("💰 Check Balance", "What is my account balance?"),
-            ("📄 Get Statement", "Show my last month statement"),
-            ("🏦 Personal Loan", "personal loan"),
-            ("📊 Loan Eligibility", "check eligibility"),
-            ("📈 EMI Calculator", "emi for 50000"),
-            ("✈️ Travel Plan", "Plan a trip to Japan for 20 days"),
-            ("📋 Analyze Document", "Analyze this document" + (" (upload first)" if not st.session_state.uploaded_files else ""))
+            ("Check Balance", "What is my account balance?"),
+            ("Get Statement", "Show my last month statement"),
+            ("Personal Loan", "personal loan"),
+            ("Loan Eligibility", "check eligibility"),
+            ("EMI Calculator", "emi for 50000"),
+            ("Travel Plan", "Plan a trip to Japan for 20 days"),
+            ("Analyze Document", "Analyze this document" + (" (upload first)" if not st.session_state.uploaded_files else ""))
         ]
         
         for label, query in actions:
@@ -1030,7 +1030,7 @@ def main_app():
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-title">📊 Session Information</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-title"> Session Information</div>', unsafe_allow_html=True)
         st.markdown(f'''
         <div class="user-detail"><span class="status-online"></span> Active Session</div>
         <div class="user-detail">ID: {st.session_state.session_id[:8] if st.session_state.session_id else 'N/A'}...</div>

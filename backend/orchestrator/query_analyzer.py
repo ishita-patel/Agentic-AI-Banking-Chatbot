@@ -1,7 +1,3 @@
-# backend/orchestrator/query_analyzer.py
-
-print("LOADED: backend/orchestrator/query_analyzer.py")
-
 import json
 import re
 from typing import Dict, Any
@@ -86,10 +82,8 @@ Example:
             print(response)
             print("=========================================\n")
 
-            # --------------------------------------------------
-            # CASE 1
-            # GroqAgent returns dict
-            # --------------------------------------------------
+            # CASE 1: GroqAgent returns dict
+
 
             if isinstance(response, dict):
 
@@ -103,10 +97,8 @@ Example:
             else:
                 response_text = str(response)
 
-            # --------------------------------------------------
             # Extract JSON if wrapped in text
-            # --------------------------------------------------
-
+            
             json_match = re.search(
                 r'\{.*\}',
                 response_text,

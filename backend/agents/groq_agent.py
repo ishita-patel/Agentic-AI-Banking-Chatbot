@@ -1,5 +1,3 @@
-# backend/agents/groq_agent.py
-
 import os
 from groq import Groq
 from dotenv import load_dotenv
@@ -10,7 +8,9 @@ load_dotenv()
 class GroqAgent:
     def __init__(self):
         self.api_key = os.getenv("GROQ_API_KEY")
-
+        print("\n========== GROQ DEBUG ==========")
+        print("KEY:", self.api_key[:15] + "...")
+        print("================================\n")
         self.is_available = False
         self.client = None
 
@@ -18,9 +18,9 @@ class GroqAgent:
             try:
                 self.client = Groq(api_key=self.api_key)
                 self.is_available = True
-                print("✅ Groq AI initialized")
+                print("Groq AI initialized")
             except Exception as e:
-                print(f"❌ Groq initialization error: {e}")
+                print(f"Groq initialization error: {e}")
 
     async def process(
         self,
