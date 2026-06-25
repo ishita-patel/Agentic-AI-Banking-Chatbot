@@ -368,25 +368,8 @@ Return ONLY "VALID" or "INVALID".
             return {
                 "success": False,
                 "message": (
-                    "  Document REJECTED\n\n"
-                    "This document does not appear to be a banking or financial document.\n\n"
-                    "  Your previous financial document (if any) has been preserved.\n\n"
-                    "  ACCEPTED document types:\n"
-                    "• Bank statements\n"
-                    "• Loan agreements\n"
-                    "• Salary slips\n"
-                    "• Tax returns\n"
-                    "• Investment reports\n"
-                    "• Insurance policies\n"
-                    "• Banking strategy documents\n"
-                    "• Financial reports\n\n"
-                    "  REJECTED document types:\n"
-                    "• Internship handbooks\n"
-                    "• HR policies\n"
-                    "• Employee handbooks\n"
-                    "• Technical documentation\n"
-                    "• Career guides\n"
-                    "• Any non-financial content"
+                    "Invalid financial documents found.\n\n"
+                    "Please upload relevant financial document to get started."
                 )
             }
 

@@ -545,6 +545,11 @@ def init_session_state():
         st.session_state.uploaded_files = []
     if "agents_used" not in st.session_state:
         st.session_state.agents_used = []
+    # New session state variables for upload status
+    if "upload_status" not in st.session_state:
+        st.session_state.upload_status = None
+    if "upload_status_type" not in st.session_state:
+        st.session_state.upload_status_type = None
 
 def authenticate_user(username, password):
     if username in MOCK_USERS and MOCK_USERS[username]["password"] == password:
@@ -582,6 +587,8 @@ def logout():
     st.session_state.show_profile = False
     st.session_state.has_documents = False
     st.session_state.uploaded_files = []
+    st.session_state.upload_status = None
+    st.session_state.upload_status_type = None
     st.rerun()
 
 def send_message_and_get_response(message, user_id, api_url, has_documents=False):
@@ -962,21 +969,40 @@ def main_app():
                         
                         if response.status_code == 200:
                             data = response.json()
-                            st.success(f"Document processed successfully!")
-                            st.session_state.has_documents = True
-                            if uploaded_file.name not in st.session_state.uploaded_files:
-                                st.session_state.uploaded_files.append(uploaded_file.name)
                             
-                            st.session_state.messages.append({
-                                "role": "assistant",
-                                "content": f"Document '{uploaded_file.name}' uploaded and processed. You can now ask questions about this document.",
-                                "timestamp": datetime.now().strftime("%H:%M")
-                            })
+                            if data.get("success"):
+                                st.session_state.upload_status_type = "success"
+                                st.session_state.upload_status = "Document processed successfully."
+                                
+                                st.session_state.has_documents = True
+                                
+                                if uploaded_file.name not in st.session_state.uploaded_files:
+                                    st.session_state.uploaded_files.append(uploaded_file.name)
+                            else:
+                                st.session_state.upload_status_type = "error"
+                                st.session_state.upload_status = (
+                                    "Invalid financial documents found.\n\n"
+                                    "Please upload relevant financial document to get started."
+                                )
+                                
+                                st.session_state.has_documents = False
+                            
                             st.rerun()
                         else:
-                            st.error(f"Failed to process document: {response.text}")
+                            st.session_state.upload_status_type = "error"
+                            st.session_state.upload_status = f"Failed to process document: {response.text}"
+                            st.rerun()
                     except Exception as e:
-                        st.error(f"Connection error: {e}")
+                        st.session_state.upload_status_type = "error"
+                        st.session_state.upload_status = f"Connection error: {e}"
+                        st.rerun()
+        
+        # Display upload status messages below the button
+        if st.session_state.upload_status:
+            if st.session_state.upload_status_type == "success":
+                st.success(st.session_state.upload_status)
+            else:
+                st.error(st.session_state.upload_status)
         
         if st.session_state.uploaded_files:
             st.markdown('<div style="margin-top: 0.75rem;"><div class="sidebar-title">📄 Uploaded Documents</div></div>', unsafe_allow_html=True)
