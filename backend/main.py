@@ -1,6 +1,6 @@
 # backend/main.py
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
@@ -16,6 +16,8 @@ print("MAIN.PY LOADED")
 
 from backend.orchestrator.orchestrator import Orchestrator
 from backend.data_loader import BankDataLoader
+from backend.auth.auth_service import AuthService
+from backend.auth.dependencies import get_current_user
 
 app = FastAPI(
     title="Agentic Bank Multi-Agent System"
@@ -35,13 +37,13 @@ app.add_middleware(
 
 orchestrator = Orchestrator()
 data_loader = BankDataLoader()
+auth_service = AuthService()
 
 # ============================================================
 # MODELS
 # ============================================================
 
 class ChatRequest(BaseModel):
-    user_id: str
     message: str
     has_documents: bool = False
 
@@ -52,6 +54,11 @@ class ChatResponse(BaseModel):
     analysis: dict
     agents_used: list
     timestamp: datetime
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 # ============================================================
@@ -75,14 +82,45 @@ async def health():
 
 
 # ============================================================
+# AUTHENTICATION
+# ============================================================
+
+@app.post("/login")
+async def login(request: LoginRequest):
+    token = auth_service.login(
+        request.username,
+        request.password
+    )
+
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials"
+        )
+
+    return {
+        "access_token": token,
+        "token_type": "bearer"
+    }
+
+
+# ============================================================
 # USER PROFILE
 # ============================================================
 
 @app.get("/user/{user_id}")
-async def get_user_profile(user_id: str):
+async def get_user_profile(
+    user_id: str,
+    current_user = Depends(get_current_user)
+):
+    # Verify the user is accessing their own profile
+    if current_user["user_id"] != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to access this user's profile"
+        )
 
     try:
-
         user = data_loader.get_user(user_id)
 
         if not user:
@@ -140,7 +178,6 @@ async def get_user_profile(user_id: str):
         }
 
     except Exception as e:
-
         return {
             "success": False,
             "message": str(e)
@@ -152,12 +189,13 @@ async def get_user_profile(user_id: str):
 # ============================================================
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-
+async def chat(
+    request: ChatRequest,
+    current_user = Depends(get_current_user)
+):
     try:
-
         result = await orchestrator.process(
-            user_id=request.user_id,
+            user_id=current_user["user_id"],
             query=request.message,
             has_documents=request.has_documents
         )
@@ -180,7 +218,6 @@ async def chat(request: ChatRequest):
         )
 
     except Exception as e:
-
         return ChatResponse(
             session_id=str(uuid.uuid4()),
             response=f"Error: {str(e)}",
@@ -196,10 +233,10 @@ async def chat(request: ChatRequest):
 
 @app.post("/upload")
 async def upload_document(
-    user_id: str,
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    current_user = Depends(get_current_user)
 ):
-
+    user_id = current_user["user_id"]
     upload_dir = f"uploads/{user_id}"
 
     os.makedirs(
@@ -219,7 +256,6 @@ async def upload_document(
         )
 
     try:
-
         result = await orchestrator.upload_document(
             user_id,
             file_path
@@ -228,7 +264,6 @@ async def upload_document(
         return result
 
     except Exception as e:
-
         return {
             "success": False,
             "message": str(e)
@@ -240,8 +275,9 @@ async def upload_document(
 # ============================================================
 
 @app.get("/agents")
-async def get_agents():
-
+async def get_agents(
+    current_user = Depends(get_current_user)
+):
     return {
         "available_agents":
         orchestrator.get_available_agents()
@@ -249,8 +285,9 @@ async def get_agents():
 
 
 @app.get("/status")
-async def get_status():
-
+async def get_status(
+    current_user = Depends(get_current_user)
+):
     return {
         "agent_status":
         orchestrator.get_agent_status()

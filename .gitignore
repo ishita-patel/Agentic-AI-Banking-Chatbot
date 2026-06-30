@@ -14,3 +14,8 @@ import_data_to_mongodb.py
 generate_mock_data.py
 mock_users.json
 mock_transactions.json
+chroma_db/
+new_test.py
+test_mongo.py
+test_serp.py
+uploads/
