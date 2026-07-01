@@ -37,8 +37,6 @@ except Exception as e:
         f"Backend error: {repr(e)}"
     )
 
-st.set_page_config(page_title="Aiko Bank", page_icon="🏦", layout="wide")
-
 # Custom CSS: Red and Black theme
 st.markdown("""
 <style>
@@ -813,6 +811,9 @@ def show_profile_modal():
         </div>
         ''', unsafe_allow_html=True)
 
+st.write("mfa_required:", st.session_state.mfa_required)
+st.write("mfa_secret:", st.session_state.mfa_secret)
+st.write("mfa_qr_generated:", st.session_state.mfa_qr_generated)
 def login_page():
 
     # MFA OTP Screen - Check at the very top of login_page()
@@ -1046,6 +1047,11 @@ def login_page():
                         },
                         timeout=90
                     )
+                    st.write("Status:", login_response.status_code)
+                    st.write("Response:", login_response.text[:500])
+                    print("LOGIN STATUS:", login_response.status_code)
+                    print("LOGIN RESPONSE:", login_response.text)
+
 
                     if login_response.status_code == 200:
                         data = login_response.json()
