@@ -815,6 +815,9 @@ st.write("mfa_required:", st.session_state.mfa_required)
 st.write("mfa_secret:", st.session_state.mfa_secret)
 st.write("mfa_qr_generated:", st.session_state.mfa_qr_generated)
 def login_page():
+    st.write("SESSION MFA:", st.session_state.mfa_required)
+    st.write("SESSION SECRET:", st.session_state.mfa_secret)
+    st.write("SESSION USER:", st.session_state.mfa_username)
 
     # MFA OTP Screen - Check at the very top of login_page()
     if st.session_state.mfa_required:
@@ -1055,6 +1058,12 @@ def login_page():
 
                     if login_response.status_code == 200:
                         data = login_response.json()
+
+                        st.write("LOGIN RESPONSE JSON:", data)
+
+                        st.write("mfa_required from backend:", data.get("mfa_required"))
+
+                        print("LOGIN JSON:", data)
 
                         # Check if MFA is required
                         if data.get("mfa_required"):
