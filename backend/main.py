@@ -15,7 +15,7 @@ print("SERVER TIME:", datetime.utcnow())
 print("SERVER UNIX:", int(time.time()))
 print("MAIN.PY LOADED")
 
-# from backend.orchestrator.orchestrator import Orchestrator
+from backend.orchestrator.orchestrator import Orchestrator
 from backend.data_loader import BankDataLoader
 from backend.auth.auth_service import AuthService
 from backend.auth.dependencies import get_current_user
@@ -37,7 +37,7 @@ app.add_middleware(
 # SERVICES
 # ============================================================
 
-#orchestrator = Orchestrator()
+orchestrator = Orchestrator()
 data_loader = BankDataLoader()
 auth_service = AuthService()
 
@@ -283,7 +283,7 @@ async def get_user_profile(
 # CHAT
 # ============================================================
 
-#@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
     current_user = Depends(get_current_user)
@@ -326,7 +326,7 @@ async def chat(
 # DOCUMENT UPLOAD
 # ============================================================
 
-#@app.post("/upload")
+@app.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
     current_user = Depends(get_current_user)
@@ -369,7 +369,7 @@ async def upload_document(
 # DEBUG
 # ============================================================
 
-#@app.get("/agents")
+@app.get("/agents")
 async def get_agents(
     current_user = Depends(get_current_user)
 ):
@@ -379,7 +379,7 @@ async def get_agents(
     }
 
 
-#@app.get("/status")
+@app.get("/status")
 async def get_status(
     current_user = Depends(get_current_user)
 ):
