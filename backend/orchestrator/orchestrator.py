@@ -14,7 +14,7 @@ from backend.agents.investment_agent import InvestmentAgent
 from backend.agents.tax_agent import TaxAgent
 from backend.agents.legal_agent import LegalAgent
 from backend.agents.web_search_agent import WebSearchAgent
-from backend.agents.rag_agent import RAGAgent
+#from backend.agents.rag_agent import RAGAgent
 from backend.agents.groq_agent import GroqAgent
 
 
@@ -45,7 +45,7 @@ class Orchestrator:
             "tax": TaxAgent(),
             "legal": LegalAgent(),
             "web_search": WebSearchAgent(),
-            "rag": RAGAgent()
+            #"rag": RAGAgent()
         }
 
     # MEMORY
