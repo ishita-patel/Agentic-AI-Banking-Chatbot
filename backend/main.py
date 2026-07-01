@@ -150,26 +150,30 @@ async def verify_otp(
             status_code=400,
             detail="MFA not configured"
         )
-
-    print("========== MFA DEBUG ==========")
-    print("USER:", user["user_id"])
-    print("SECRET:", secret)
+    
+    print("SERVER UTC:", datetime.utcnow())
+    print("SERVER UNIX:", int(time.time()))
+    print("DB SECRET:", secret)
 
     totp = pyotp.TOTP(secret)
 
-    print("EXPECTED OTP:", totp.now())
-    print("RECEIVED OTP:", request.otp)
-    print("===============================")
+    expected_otp = totp.now()
 
-    if not totp.verify(
+    verification_result = totp.verify(
         request.otp,
-        valid_window=1
-    ):
+        valid_window=10
+    )
+
+    print("EXPECTED OTP:", expected_otp)
+    print("RECEIVED OTP:", request.otp)
+    print("VERIFY RESULT:", verification_result)
+
+    if not verification_result:
         raise HTTPException(
             status_code=401,
             detail="Invalid OTP"
         )
-
+    
     access_token = create_access_token(
         {
             "user_id":
