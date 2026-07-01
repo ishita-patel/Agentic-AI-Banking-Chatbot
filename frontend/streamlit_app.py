@@ -8,6 +8,11 @@ import pyotp
 import qrcode
 from io import BytesIO
 
+API_URL = os.getenv(
+    "API_URL",
+    "http://127.0.0.1:8000"
+)
+
 st.set_page_config(page_title="Aiko Bank", page_icon="🏦", layout="wide")
 
 # Custom CSS: Red and Black theme
@@ -510,6 +515,7 @@ assistant_chat_window = """
 """
 
 # Helper function to generate MFA QR code
+
 def generate_mfa_qr(username, secret):
     uri = pyotp.TOTP(secret).provisioning_uri(
         name=username,
