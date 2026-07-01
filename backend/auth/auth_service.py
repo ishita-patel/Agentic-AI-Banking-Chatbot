@@ -13,7 +13,6 @@ class AuthService:
         username,
         password
     ):
-
         user = self.loader.get_user_by_username(
             username
         )

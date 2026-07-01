@@ -6,9 +6,16 @@ from pydantic import BaseModel
 from datetime import datetime
 from dotenv import load_dotenv
 
+from datetime import datetime
+import time
+
+print("SERVER TIME:", datetime.utcnow())
+print("SERVER UNIX:", int(time.time()))
+
 import uuid
 import os
 import shutil
+import pyotp
 
 load_dotenv()
 
@@ -18,6 +25,7 @@ from backend.orchestrator.orchestrator import Orchestrator
 from backend.data_loader import BankDataLoader
 from backend.auth.auth_service import AuthService
 from backend.auth.dependencies import get_current_user
+from backend.auth.jwt_handler import create_access_token
 
 app = FastAPI(
     title="Agentic Bank Multi-Agent System"
@@ -61,6 +69,11 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class OTPRequest(BaseModel):
+    user_id: str
+    otp: str
+
+
 # ============================================================
 # ROOT
 # ============================================================
@@ -87,6 +100,7 @@ async def health():
 
 @app.post("/login")
 async def login(request: LoginRequest):
+
     token = auth_service.login(
         request.username,
         request.password
@@ -98,9 +112,92 @@ async def login(request: LoginRequest):
             detail="Invalid credentials"
         )
 
+    user = auth_service.loader.get_user_by_username(
+        request.username
+    )
+
+    # MFA enabled?  
+    if user.get("mfa_enabled", False):
+        return {
+            "mfa_required": True,
+            "user_id": user["user_id"],
+            "username": user["username"],
+            "totp_secret": user["totp_secret"]
+        }
+
     return {
+        "user_id": user["user_id"],
         "access_token": token,
         "token_type": "bearer"
+    }
+
+
+@app.post("/verify-otp")
+async def verify_otp(
+    request: OTPRequest
+):
+
+    user = data_loader.get_user(
+        request.user_id
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    secret = user.get("totp_secret")
+
+    print("RAW SECRET REPR:", repr(secret))
+
+    if not secret:
+        raise HTTPException(
+            status_code=400,
+            detail="MFA not configured"
+        )
+
+    print("========== MFA DEBUG ==========")
+    print("USER:", user["user_id"])
+    print("SECRET:", secret)
+
+    totp = pyotp.TOTP(secret)
+
+    print("EXPECTED OTP:", totp.now())
+    print("RECEIVED OTP:", request.otp)
+    print("===============================")
+
+    if not totp.verify(
+        request.otp,
+        valid_window=1
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid OTP"
+        )
+
+    access_token = create_access_token(
+        {
+            "user_id":
+            user["user_id"],
+
+            "role":
+            user.get(
+                "role",
+                "customer"
+            )
+        }
+    )
+
+    return {
+        "user_id":
+        user["user_id"],
+
+        "access_token":
+        access_token,
+
+        "token_type":
+        "bearer"
     }
 
 

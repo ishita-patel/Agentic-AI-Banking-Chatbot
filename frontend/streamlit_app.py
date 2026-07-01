@@ -4,6 +4,9 @@ import uuid
 from datetime import datetime
 import tempfile
 import os
+import pyotp
+import qrcode
+from io import BytesIO
 
 st.set_page_config(page_title="Aiko Bank", page_icon="🏦", layout="wide")
 
@@ -386,6 +389,16 @@ st.markdown("""
         border-radius: 10px;
         margin-right: 0.25rem;
     }
+    
+    .mfa-setup-container {
+        background: rgba(26, 26, 26, 0.85);
+        backdrop-filter: blur(10px);
+        padding: 2rem;
+        border-radius: 16px;
+        border: 1px solid rgba(220, 38, 38, 0.3);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        text-align: center;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -496,33 +509,17 @@ assistant_chat_window = """
 </script>
 """
 
-MOCK_USERS = {
-    "pari.reddy": {
-        "password": "pass123",
-        "name": "Pari Reddy",
-        "user_id": "user_001"
-    },
-    "raj.sharma": {
-        "password": "pass123",
-        "name": "Raj Sharma",
-        "user_id": "user_002"
-    },
-    "myra.mishra": {
-        "password": "pass123",
-        "name": "Myra Mishra",
-        "user_id": "user_003"
-    },
-    "manish.nair": {
-        "password": "pass123",
-        "name": "Manish Nair",
-        "user_id": "user_004"
-    },
-    "divya.verma": {
-        "password": "pass123",
-        "name": "Divya Verma",
-        "user_id": "user_005"
-    }
-}
+# Helper function to generate MFA QR code
+def generate_mfa_qr(username, secret):
+    uri = pyotp.TOTP(secret).provisioning_uri(
+        name=username,
+        issuer_name="Aiko Bank"
+    )
+
+    qr = qrcode.make(uri)
+
+    return qr.get_image()
+
 
 def init_session_state():
     if "authenticated" not in st.session_state:
@@ -550,25 +547,36 @@ def init_session_state():
         st.session_state.upload_status = None
     if "upload_status_type" not in st.session_state:
         st.session_state.upload_status_type = None
-
-def authenticate_user(username, password):
-    if username in MOCK_USERS and MOCK_USERS[username]["password"] == password:
-        return MOCK_USERS[username]["user_id"], MOCK_USERS[username]
-    return None, None
+    # MFA session state variables
+    if "mfa_required" not in st.session_state:
+        st.session_state.mfa_required = False
+    if "pending_user_id" not in st.session_state:
+        st.session_state.pending_user_id = None
+    if "access_token" not in st.session_state:
+        st.session_state.access_token = None
+    if "refresh_token" not in st.session_state:
+        st.session_state.refresh_token = None
+    if "mfa_secret" not in st.session_state:
+        st.session_state.mfa_secret = None
+    if "mfa_username" not in st.session_state:
+        st.session_state.mfa_username = None
+    if "mfa_qr_generated" not in st.session_state:
+        st.session_state.mfa_qr_generated = False
 
 def fetch_user_profile(user_id, api_url):
-
     try:
-
+        headers = {}
+        if st.session_state.access_token:
+            headers["Authorization"] = f"Bearer {st.session_state.access_token}"
+        
         response = requests.get(
             f"{api_url}/user/{user_id}",
+            headers=headers,
             timeout=30
         )
 
         if response.status_code == 200:
-
             data = response.json()
-
             if data.get("success"):
                 return data["user"]
 
@@ -589,6 +597,13 @@ def logout():
     st.session_state.uploaded_files = []
     st.session_state.upload_status = None
     st.session_state.upload_status_type = None
+    st.session_state.mfa_required = False
+    st.session_state.pending_user_id = None
+    st.session_state.access_token = None
+    st.session_state.refresh_token = None
+    st.session_state.mfa_secret = None
+    st.session_state.mfa_username = None
+    st.session_state.mfa_qr_generated = False
     st.rerun()
 
 def send_message_and_get_response(message, user_id, api_url, has_documents=False):
@@ -609,6 +624,10 @@ def send_message_and_get_response(message, user_id, api_url, has_documents=False
         print("HAS DOCUMENTS:", has_documents)
         print("======================================\n")
 
+        headers = {}
+        if st.session_state.access_token:
+            headers["Authorization"] = f"Bearer {st.session_state.access_token}"
+
         response = requests.post(
             f"{api_url}/chat",
             json={
@@ -616,6 +635,7 @@ def send_message_and_get_response(message, user_id, api_url, has_documents=False
                 "message": message,
                 "has_documents": has_documents
             },
+            headers=headers,
             timeout=60
         )
 
@@ -655,6 +675,7 @@ def send_message_and_get_response(message, user_id, api_url, has_documents=False
                         "user_id": user_id,
                         "message": message
                     },
+                    headers=headers,
                     timeout=60
                 )
 
@@ -765,6 +786,159 @@ def show_profile_modal():
 def login_page():
     API_URL = "http://127.0.0.1:8000"
 
+    # MFA OTP Screen - Check at the very top of login_page()
+    if st.session_state.mfa_required:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown('<div class="login-container">', unsafe_allow_html=True)
+            
+            st.markdown(
+                '<div class="login-title">🔐 Two-Factor Authentication</div>',
+                unsafe_allow_html=True
+            )
+
+            # Check if we have MFA secret for setup
+            if st.session_state.mfa_secret and not st.session_state.mfa_qr_generated:
+                # Show setup button
+                if st.button(
+                    "📱 Setup Google Authenticator",
+                    use_container_width=True,
+                    key="setup_mfa_btn"
+                ):
+                    st.session_state.mfa_qr_generated = True
+                    st.rerun()
+                
+                st.markdown("""
+                <div style="text-align:center;margin-top:1rem;color:#888888;font-size:0.85rem;">
+                    Click the button above to set up your authenticator app.
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Show QR code and instructions if generated
+            if st.session_state.mfa_qr_generated and st.session_state.mfa_secret:
+                # Generate QR code
+                qr = generate_mfa_qr(
+                    st.session_state.mfa_username,
+                    st.session_state.mfa_secret
+                )
+                
+                # Display QR code
+                st.image(
+                    qr,
+                    caption="Scan with Google Authenticator",
+                    use_column_width=True
+                )
+                
+                st.info(
+                    """
+                    **Setup Instructions:**
+                    1. Open Google Authenticator
+                    2. Tap the + icon
+                    3. Scan the QR code above
+                    4. Enter the 6-digit code below to verify
+                    """
+                )
+                
+                st.markdown("---")
+            
+            # OTP input
+            otp = st.text_input(
+                "Enter Verification Code",
+                placeholder="Enter 6-digit code from Google Authenticator",
+                key="mfa_otp",
+                label_visibility="collapsed",
+                max_chars=6
+            )
+
+            # Verify button - always show
+            if st.button(
+                "Verify OTP",
+                use_container_width=True,
+                key="verify_otp_btn"
+            ):
+                if otp and len(otp) == 6:
+                    try:
+                        response = requests.post(
+                            f"{API_URL}/verify-otp",
+                            json={
+                                "user_id": st.session_state.pending_user_id,
+                                "otp": otp
+                            },
+                            timeout=30
+                        )
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            
+                            access_token = data.get("access_token")
+                            user_id = data.get("user_id")
+                            
+                            if access_token and user_id:
+                                st.session_state.access_token = access_token
+                                st.session_state.refresh_token = data.get("refresh_token")
+                                
+                                profile = fetch_user_profile(user_id, API_URL)
+                                
+                                if profile is None:
+                                    st.error("Could not fetch user profile from backend.")
+                                else:
+                                    st.session_state.authenticated = True
+                                    st.session_state.user_id = user_id
+                                    st.session_state.user_info = profile
+                                    st.session_state.session_id = str(uuid.uuid4())
+                                    st.session_state.messages = []
+                                    st.session_state.agents_used = []
+                                    
+                                    # Clear MFA state
+                                    st.session_state.mfa_required = False
+                                    st.session_state.pending_user_id = None
+                                    st.session_state.mfa_secret = None
+                                    st.session_state.mfa_username = None
+                                    st.session_state.mfa_qr_generated = False
+
+                                    st.session_state.messages.append({
+                                        "role": "assistant",
+                                        "content": (
+                                            f"Welcome, {profile['name']}. "
+                                            f"Your banking assistant is ready. "
+                                            f"How may I assist you today?"
+                                        ),
+                                        "timestamp": datetime.now().strftime("%H:%M")
+                                    })
+
+                                    st.rerun()
+                            else:
+                                st.error("Invalid response from server. Missing access_token or user_id.")
+
+                        else:
+                            st.error("Invalid OTP. Please try again.")
+
+                    except requests.exceptions.ConnectionError:
+                        st.error("Cannot connect to the server. Please ensure the backend is running.")
+                    except Exception as e:
+                        st.error(f"An error occurred: {str(e)}")
+
+                else:
+                    st.warning("Please enter a valid 6-digit verification code.")
+
+            if st.button(
+                "← Back to Login",
+                use_container_width=True,
+                key="back_to_login_btn"
+            ):
+                st.session_state.mfa_required = False
+                st.session_state.pending_user_id = None
+                st.session_state.mfa_secret = None
+                st.session_state.mfa_username = None
+                st.session_state.mfa_qr_generated = False
+                st.rerun()
+
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown(glow_footer, unsafe_allow_html=True)
+        return  # Exit login_page early, don't show regular login form
+
+    # Regular login form (only shown when mfa_required is False)
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
@@ -807,66 +981,80 @@ def login_page():
 
         if st.button(
             "Sign In",
-            use_container_width=True
+            use_container_width=True,
+            key="signin_btn"
         ):
 
             if username and password:
 
-                user_id, user_info = authenticate_user(
-                    username,
-                    password
-                )
-
-                if user_id:
-
-                    profile = fetch_user_profile(
-                        user_id,
-                        API_URL
+                try:
+                    login_response = requests.post(
+                        f"{API_URL}/login",
+                        json={
+                            "username": username,
+                            "password": password
+                        },
+                        timeout=30
                     )
 
-                    if profile is None:
+                    if login_response.status_code == 200:
+                        data = login_response.json()
 
-                        st.error(
-                            "Could not fetch user profile from backend."
-                        )
+                        # Check if MFA is required
+                        if data.get("mfa_required"):
+                            st.session_state.mfa_required = True
+                            st.session_state.pending_user_id = data.get("user_id")
+                            
+                            # Store MFA secret and username for QR generation
+                            st.session_state.mfa_secret = data.get("totp_secret")
+                            st.session_state.mfa_username = data.get("username")
+                            st.session_state.mfa_qr_generated = False
+                            
+                            st.rerun()
+                        else:
+                            # No MFA required - proceed with login
+                            user_id = data.get("user_id")
+                            access_token = data.get("access_token")
+                            
+                            if user_id and access_token:
+                                st.session_state.access_token = access_token
+                                st.session_state.refresh_token = data.get("refresh_token")
+                                
+                                profile = fetch_user_profile(user_id, API_URL)
+                                if profile is None:
+                                    st.error("Could not fetch user profile from backend.")
+                                else:
+                                    st.session_state.authenticated = True
+                                    st.session_state.user_id = user_id
+                                    st.session_state.user_info = profile
+                                    st.session_state.session_id = str(uuid.uuid4())
+                                    st.session_state.messages = []
+                                    st.session_state.agents_used = []
+
+                                    st.session_state.messages.append({
+                                        "role": "assistant",
+                                        "content": (
+                                            f"Welcome, {profile['name']}. "
+                                            f"Your banking assistant is ready. "
+                                            f"How may I assist you today?"
+                                        ),
+                                        "timestamp": datetime.now().strftime("%H:%M")
+                                    })
+
+                                    st.rerun()
+                            else:
+                                st.error("Invalid response from server. Missing user_id or access_token.")
 
                     else:
+                        st.error(f"Login failed: {login_response.status_code} - {login_response.text}")
 
-                        # Debug output to verify profile data
-                        print("\nPROFILE FROM BACKEND:")
-                        print(profile)
-                        print("\n")
-
-                        st.session_state.authenticated = True
-                        st.session_state.user_id = user_id
-                        st.session_state.user_info = profile
-                        st.session_state.session_id = str(uuid.uuid4())
-                        st.session_state.messages = []
-                        st.session_state.agents_used = []
-
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": (
-                                f"Welcome, {profile['name']}. "
-                                f"Your banking assistant is ready. "
-                                f"How may I assist you today?"
-                            ),
-                            "timestamp": datetime.now().strftime("%H:%M")
-                        })
-
-                        st.rerun()
-
-                else:
-
-                    st.error(
-                        "Invalid credentials. Please try again."
-                    )
+                except requests.exceptions.ConnectionError:
+                    st.error("Cannot connect to the server. Please ensure the backend is running.")
+                except Exception as e:
+                    st.error(f"An error occurred: {str(e)}")
 
             else:
-
-                st.warning(
-                    "Please enter your credentials."
-                )
+                st.warning("Please enter your credentials.")
 
         st.markdown(
             '''
@@ -882,18 +1070,6 @@ def login_page():
             '</div>',
             unsafe_allow_html=True
         )
-
-        with st.expander("Demo Access"):
-
-            st.markdown("""
-| Username | Password |
-|----------|----------|
-| pari.reddy | pass123 |
-| raj.sharma | pass123 |
-| myra.mishra | pass123 |
-| manish.nair | pass123 |
-| divya.verma | pass123 |
-""")
 
     st.markdown(
         glow_footer,
@@ -961,9 +1137,14 @@ def main_app():
                 with st.spinner("Processing document..."):
                     files = {"file": uploaded_file}
                     try:
+                        headers = {}
+                        if st.session_state.access_token:
+                            headers["Authorization"] = f"Bearer {st.session_state.access_token}"
+                        
                         response = requests.post(
                             f"{API_URL}/upload?user_id={st.session_state.user_id}",
                             files=files,
+                            headers=headers,
                             timeout=60
                         )
                         

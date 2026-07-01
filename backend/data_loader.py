@@ -18,7 +18,7 @@ class BankDataLoader:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
-                    print("🔥 Creating singleton BankDataLoader")
+                    print("Creating singleton BankDataLoader")
                     cls._instance = super(
                         BankDataLoader,
                         cls
@@ -55,7 +55,7 @@ class BankDataLoader:
             if not mongodb_url:
 
                 print(
-                    "❌ MONGODB_URL not found"
+                    "MONGODB_URL not found"
                 )
 
                 return
@@ -74,13 +74,13 @@ class BankDataLoader:
             ]
 
             print(
-                "✅ Connected to MongoDB"
+                "Connected to MongoDB"
             )
 
         except Exception as e:
 
             print(
-                f"❌ Mongo connection failed: {e}"
+                f"Mongo connection failed: {e}"
             )
 
             self.client = None
@@ -105,7 +105,7 @@ class BankDataLoader:
         except Exception as e:
 
             print(
-                f"⚠️ Mongo connection lost: {e}"
+                f"Mongo connection lost: {e}"
             )
 
             self.connect()
