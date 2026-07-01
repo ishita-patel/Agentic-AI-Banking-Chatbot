@@ -16,7 +16,7 @@ st.set_page_config(
 
 API_URL = os.getenv(
     "API_URL",
-    "http://127.0.0.1:8000"
+    "https://aiko-bank-backend.onrender.com"
 )
 
 st.write("API_URL =", API_URL)
