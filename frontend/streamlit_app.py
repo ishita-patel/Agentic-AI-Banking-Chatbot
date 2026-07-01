@@ -8,10 +8,34 @@ import pyotp
 import qrcode
 from io import BytesIO
 
+st.set_page_config(
+    page_title="Aiko Bank",
+    page_icon="🏦",
+    layout="wide"
+)
+
 API_URL = os.getenv(
     "API_URL",
     "http://127.0.0.1:8000"
 )
+
+st.write("API_URL =", API_URL)
+st.sidebar.write("API_URL =", API_URL)
+
+try:
+    response = requests.get(
+        f"{API_URL}/health",
+        timeout=15
+    )
+
+    st.sidebar.success(
+        f"Backend reachable: {response.status_code}"
+    )
+
+except Exception as e:
+    st.sidebar.error(
+        f"Backend error: {repr(e)}"
+    )
 
 st.set_page_config(page_title="Aiko Bank", page_icon="🏦", layout="wide")
 
