@@ -811,9 +811,7 @@ def show_profile_modal():
         </div>
         ''', unsafe_allow_html=True)
 
-st.write("mfa_required:", st.session_state.mfa_required)
-st.write("mfa_secret:", st.session_state.mfa_secret)
-st.write("mfa_qr_generated:", st.session_state.mfa_qr_generated)
+
 def login_page():
     st.write("SESSION MFA:", st.session_state.mfa_required)
     st.write("SESSION SECRET:", st.session_state.mfa_secret)
