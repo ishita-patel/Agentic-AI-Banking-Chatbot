@@ -602,7 +602,7 @@ def fetch_user_profile(user_id, api_url):
         response = requests.get(
             f"{api_url}/user/{user_id}",
             headers=headers,
-            timeout=30
+            timeout=90
         )
 
         if response.status_code == 200:
@@ -894,7 +894,7 @@ def login_page():
                                 "user_id": st.session_state.pending_user_id,
                                 "otp": otp
                             },
-                            timeout=30
+                            timeout=90
                         )
 
                         if response.status_code == 200:
@@ -943,10 +943,31 @@ def login_page():
                         else:
                             st.error("Invalid OTP. Please try again.")
 
-                    except requests.exceptions.ConnectionError:
-                        st.error("Cannot connect to the server. Please ensure the backend is running.")
+                    except requests.exceptions.ConnectionError as e:
+                        st.error(
+                            f"ConnectionError: {repr(e)}"
+                        )
+
+                    except requests.exceptions.Timeout as e:
+                        st.error(
+                            f"Timeout: {repr(e)}"
+                        )
+
+                    except requests.exceptions.RequestException as e:
+                        st.error(
+                            f"RequestException: {repr(e)}"
+                        )
+
                     except Exception as e:
-                        st.error(f"An error occurred: {str(e)}")
+                        import traceback
+
+                        st.error(
+                            f"Exception: {repr(e)}"
+                        )
+
+                        st.code(
+                            traceback.format_exc()
+                        )
 
                 else:
                     st.warning("Please enter a valid 6-digit verification code.")
@@ -1024,7 +1045,7 @@ def login_page():
                             "username": username,
                             "password": password
                         },
-                        timeout=30
+                        timeout=90
                     )
 
                     if login_response.status_code == 200:
@@ -1078,10 +1099,31 @@ def login_page():
                     else:
                         st.error(f"Login failed: {login_response.status_code} - {login_response.text}")
 
-                except requests.exceptions.ConnectionError:
-                    st.error("Cannot connect to the server. Please ensure the backend is running.")
+                except requests.exceptions.ConnectionError as e:
+                    st.error(
+                        f"ConnectionError: {repr(e)}"
+                    )
+
+                except requests.exceptions.Timeout as e:
+                    st.error(
+                        f"Timeout: {repr(e)}"
+                    )
+
+                except requests.exceptions.RequestException as e:
+                    st.error(
+                        f"RequestException: {repr(e)}"
+                    )
+
                 except Exception as e:
-                    st.error(f"An error occurred: {str(e)}")
+                    import traceback
+
+                    st.error(
+                        f"Exception: {repr(e)}"
+                    )
+
+                    st.code(
+                        traceback.format_exc()
+                    )
 
             else:
                 st.warning("Please enter your credentials.")
