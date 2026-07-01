@@ -814,7 +814,6 @@ def show_profile_modal():
         ''', unsafe_allow_html=True)
 
 def login_page():
-    API_URL = "http://127.0.0.1:8000"
 
     # MFA OTP Screen - Check at the very top of login_page()
     if st.session_state.mfa_required:
@@ -823,7 +822,7 @@ def login_page():
             st.markdown('<div class="login-container">', unsafe_allow_html=True)
             
             st.markdown(
-                '<div class="login-title">🔐 Two-Factor Authentication</div>',
+                '<div class="login-title"> Two-Factor Authentication</div>',
                 unsafe_allow_html=True
             )
 
@@ -1149,7 +1148,6 @@ def login_page():
     )
 
 def main_app():
-    API_URL = "http://127.0.0.1:8000"
     
     render_header()
     show_profile_modal()
