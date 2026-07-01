@@ -19,9 +19,6 @@ API_URL = os.getenv(
     "https://aiko-bank-backend.onrender.com"
 )
 
-st.write("API_URL =", API_URL)
-st.sidebar.write("API_URL =", API_URL)
-
 try:
     response = requests.get(
         f"{API_URL}/health",
@@ -813,9 +810,6 @@ def show_profile_modal():
 
 
 def login_page():
-    st.write("SESSION MFA:", st.session_state.mfa_required)
-    st.write("SESSION SECRET:", st.session_state.mfa_secret)
-    st.write("SESSION USER:", st.session_state.mfa_username)
 
     # MFA OTP Screen - Check at the very top of login_page()
     if st.session_state.mfa_required:
@@ -832,7 +826,7 @@ def login_page():
             if st.session_state.mfa_secret and not st.session_state.mfa_qr_generated:
                 # Show setup button
                 if st.button(
-                    "📱 Setup Google Authenticator",
+                    "Setup Google Authenticator",
                     use_container_width=True,
                     key="setup_mfa_btn"
                 ):
