@@ -43,7 +43,7 @@ app.add_middleware(
 # SERVICES
 # ============================================================
 
-orchestrator = Orchestrator()
+#orchestrator = Orchestrator()
 data_loader = BankDataLoader()
 auth_service = AuthService()
 
