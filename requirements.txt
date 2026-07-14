@@ -43,3 +43,9 @@ pandas
 cryptography==49.0.0
 cffi==2.0.0
 pycparser==3.0
+
+#opentelemetry
+opentelemetry-api==1.43.0
+opentelemetry-sdk==1.43.0
+opentelemetry-exporter-otlp==1.43.0
+opentelemetry-instrumentation-fastapi==0.64b0

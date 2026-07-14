@@ -1,8 +1,11 @@
 import json
 import re
 from typing import Dict, Any
+from opentelemetry import trace
 
 from backend.agents.groq_agent import GroqAgent
+
+tracer = trace.get_tracer(__name__)
 
 
 class QueryAnalyzer:
@@ -30,52 +33,66 @@ class QueryAnalyzer:
             )
 
             prompt = f"""
-You are a banking query router.
+            You are a banking query router.
 
-Classify the query into ONE primary domain and optional secondary domains.
+            Classify the query into ONE primary domain and optional secondary domains.
 
-Available domains:
+            Available domains:
 
-balance
-statement
-loan
-travel
-calculator
-health
-investment
-tax
-legal
-web_search
-rag
-general
+            balance
+            statement
+            loan
+            travel
+            calculator
+            health
+            investment
+            tax
+            legal
+            web_search
+            rag
+            general
 
-Conversation History:
-{history_text}
+            Conversation History:
+            {history_text}
 
-Current Query:
-{query}
+            Current Query:
+            {query}
 
-Has Documents:
-{has_documents}
+            Has Documents:
+            {has_documents}
 
-Return ONLY valid JSON.
+            Return ONLY valid JSON.
 
-Example:
+            Example:
 
-{{
-    "primary_domain":"loan",
-    "secondary_domains":["calculator"],
-    "intent":"loan_query",
-    "complexity":"medium",
-    "confidence":0.95
-}}
-"""
+            {{
+                "primary_domain":"loan",
+                "secondary_domains":["calculator"],
+                "intent":"loan_query",
+                "complexity":"medium",
+                "confidence":0.95
+            }}
+            """
 
-            response = await self.llm.process(
-                prompt,
-                user_id="query_analyzer",
-                temperature=0
-            )
+            with tracer.start_as_current_span(
+                "LLM Router"
+            ) as span:
+
+                span.set_attribute(
+                    "temperature",
+                    0
+                )
+
+                span.set_attribute(
+                    "has_documents",
+                    has_documents
+                )
+
+                response = await self.llm.process(
+                    prompt,
+                    user_id="query_analyzer",
+                    temperature=0
+                )
 
             print("\n========== RAW ROUTER RESPONSE ==========")
             print(type(response))

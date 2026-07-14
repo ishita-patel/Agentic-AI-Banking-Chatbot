@@ -1,9 +1,8 @@
 from typing import Dict, Any, List
+from opentelemetry import trace
 
 from backend.orchestrator.query_analyzer import QueryAnalyzer
-
 from backend.agents.groq_agent import GroqAgent
-
 from backend.agents.balance_agent import BalanceAgent
 from backend.agents.loan_agent import LoanAgent
 from backend.agents.statement_agent import StatementAgent
@@ -17,17 +16,15 @@ from backend.agents.web_search_agent import WebSearchAgent
 #from backend.agents.rag_agent import RAGAgent
 from backend.agents.groq_agent import GroqAgent
 
+tracer = trace.get_tracer(__name__)
 
 class Orchestrator:
 
     def __init__(self):
 
         self.query_analyzer = QueryAnalyzer()
-
         self.llm = GroqAgent()
-
         self.agents = self.initialize_agents()
-
         self.conversation_memory = {}
 
     # AGENT REGISTRY
@@ -87,198 +84,230 @@ class Orchestrator:
         has_documents: bool = False
     ) -> Dict[str, Any]:
 
-        try:
-
-            self.save_message(
-                user_id,
-                "user",
-                query
-            )
-
-            history = self.get_history(user_id)
-
-            analysis = await self.query_analyzer.analyze(
-                query=query,
-                user_id=user_id,
-                has_documents=has_documents,
-                history=history
-            )
-            print("\n========== ANALYSIS ==========")
-            print(analysis)
-            print("==============================")
-
-            # DOCUMENT MODE OVERRIDE
-
-            if has_documents:
-
-                print("\n========== DOCUMENT MODE ==========")
-                print("FORCING RAG ONLY")
-                print("===================================")
-
-                domains = ["rag"]
-
-            # NORMAL ROUTING
-
-            else:
-
-                primary_domain = analysis.get(
-                    "primary_domain",
-                    "general"
-                )
-
-                secondary_domains = analysis.get(
-                    "secondary_domains",
-                    []
-                )
-
-                domains = []
-
-                if primary_domain != "general":
-                    domains.append(primary_domain)
-
-                domains.extend(secondary_domains)
-
-                domains = list(dict.fromkeys(domains))
-
-            print("\n========== DOMAINS ==========")
-            print(domains)
-            print("=============================")
-
-            if not domains:
-
-                response = await self.handle_general_query(
-                    query,
-                    history
-                )
+        with tracer.start_as_current_span("Orchestrator.process") as span:
+            try:
+                # Business Metrics
+                span.set_attribute("user_id", user_id)
+                span.set_attribute("query_length", len(query))
 
                 self.save_message(
                     user_id,
-                    "assistant",
-                    response
+                    "user",
+                    query
                 )
 
-                return {
-                    "success": True,
-                    "response": response,
-                    "analysis": analysis,
-                    "agents_used": ["groq"]
-                }
+                history = self.get_history(user_id)
 
-            agent_results = []
+                # Query Analysis with tracing
+                with tracer.start_as_current_span("Query Analysis") as analysis_span:
+                    analysis = await self.query_analyzer.analyze(
+                        query=query,
+                        user_id=user_id,
+                        has_documents=has_documents,
+                        history=history
+                    )
+                    
+                    analysis_span.set_attribute(
+                        "primary_domain",
+                        analysis.get("primary_domain")
+                    )
+                    analysis_span.set_attribute(
+                        "intent",
+                        analysis.get("intent")
+                    )
+                    analysis_span.set_attribute(
+                        "confidence",
+                        analysis.get("confidence")
+                    )
+                
+                print("\n========== ANALYSIS ==========")
+                print(analysis)
+                print("==============================")
 
-            successful_agents = []
+                # DOCUMENT MODE OVERRIDE
 
-            print("\n========== EXECUTING AGENTS ==========")
-            print(domains)
-            print("======================================")
-            for domain in domains:
+                if has_documents:
 
-                if domain not in self.agents:
-                    continue
+                    print("\n========== DOCUMENT MODE ==========")
+                    print("FORCING RAG ONLY")
+                    print("===================================")
 
-                try:
+                    domains = ["rag"]
 
-                    agent = self.agents[domain]
+                # NORMAL ROUTING
 
-                    context = {
-                        "query": query,
+                else:
+
+                    primary_domain = analysis.get(
+                        "primary_domain",
+                        "general"
+                    )
+
+                    secondary_domains = analysis.get(
+                        "secondary_domains",
+                        []
+                    )
+
+                    domains = []
+
+                    if primary_domain != "general":
+                        domains.append(primary_domain)
+
+                    domains.extend(secondary_domains)
+
+                    domains = list(dict.fromkeys(domains))
+
+                span.set_attribute("agent_count", len(domains))
+
+                print("\n========== DOMAINS ==========")
+                print(domains)
+                print("=============================")
+
+                if not domains:
+
+                    response = await self.handle_general_query(
+                        query,
+                        history
+                    )
+
+                    self.save_message(
+                        user_id,
+                        "assistant",
+                        response
+                    )
+
+                    return {
+                        "success": True,
+                        "response": response,
                         "analysis": analysis,
-                        "history": history,
-                        "has_documents": has_documents
+                        "agents_used": ["groq"]
                     }
 
-                    result = await agent.process(
-                        user_id,
-                        query,
-                        context
-                    )
+                agent_results = []
+                successful_agents = []
 
-                    if result.get("success"):
+                print("\n========== EXECUTING AGENTS ==========")
+                print(domains)
+                print("======================================")
+                
+                for domain in domains:
 
-                        successful_agents.append(
-                            domain
-                        )
+                    if domain not in self.agents:
+                        continue
 
-                        agent_results.append(
-                            result.get(
-                                "message",
-                                ""
+                    try:
+
+                        agent = self.agents[domain]
+
+                        context = {
+                            "query": query,
+                            "analysis": analysis,
+                            "history": history,
+                            "has_documents": has_documents
+                        }
+
+                        # Agent execution with tracing
+                        with tracer.start_as_current_span(
+                            f"{domain}_agent"
+                        ) as agent_span:
+                            
+                            agent_span.set_attribute("agent", domain)
+                            
+                            result = await agent.process(
+                                user_id,
+                                query,
+                                context
                             )
+
+                        if result.get("success"):
+
+                            successful_agents.append(
+                                domain
+                            )
+
+                            agent_results.append(
+                                result.get(
+                                    "message",
+                                    ""
+                                )
+                            )
+
+                    except Exception as e:
+
+                        print(
+                            f"{domain} agent error: {e}"
                         )
 
-                except Exception as e:
+                # Fallback
 
-                    print(
-                        f"{domain} agent error: {e}"
+                if not agent_results:
+
+                    response = await self.handle_general_query(
+                        query,
+                        history
                     )
 
-            # Fallback
+                    self.save_message(
+                        user_id,
+                        "assistant",
+                        response
+                    )
 
-            if not agent_results:
+                    return {
+                        "success": True,
+                        "response": response,
+                        "analysis": analysis,
+                        "agents_used": ["groq"]
+                    }
 
-                response = await self.handle_general_query(
-                    query,
-                    history
-                )
+                # Single Agent
+
+                if len(agent_results) == 1:
+
+                    final_response = agent_results[0]
+
+                # Multi Agent Synthesis with tracing
+
+                else:
+                    with tracer.start_as_current_span(
+                        "Response Synthesis"
+                    ) as synthesis_span:
+                        
+                        final_response = await self.synthesize_results(
+                            query,
+                            agent_results
+                        )
 
                 self.save_message(
                     user_id,
                     "assistant",
-                    response
+                    final_response
                 )
 
                 return {
                     "success": True,
-                    "response": response,
+                    "response": final_response,
                     "analysis": analysis,
-                    "agents_used": ["groq"]
+                    "agents_used": successful_agents,
+                    "primary_agent": (
+                        successful_agents[0]
+                        if successful_agents
+                        else "groq"
+                    )
                 }
 
-            # Single Agent
+            except Exception as e:
 
-            if len(agent_results) == 1:
+                print(f"Orchestrator Error: {e}")
 
-                final_response = agent_results[0]
-
-            # Multi Agent Synthesis
-
-            else:
-
-                final_response = await self.synthesize_results(
-                    query,
-                    agent_results
-                )
-
-            self.save_message(
-                user_id,
-                "assistant",
-                final_response
-            )
-
-            return {
-                "success": True,
-                "response": final_response,
-                "analysis": analysis,
-                "agents_used": successful_agents,
-                "primary_agent": (
-                    successful_agents[0]
-                    if successful_agents
-                    else "groq"
-                )
-            }
-
-        except Exception as e:
-
-            print(f"Orchestrator Error: {e}")
-
-            return {
-                "success": False,
-                "response": (
-                    "I encountered an error "
-                    "processing your request."
-                ),
-                "agents_used": ["error"]
-            }
+                return {
+                    "success": False,
+                    "response": (
+                        "I encountered an error "
+                        "processing your request."
+                    ),
+                    "agents_used": ["error"]
+                }
 
     # GENERAL CHAT
 
@@ -288,14 +317,15 @@ class Orchestrator:
         history
     ):
 
-        history_text = "\n".join(
-            [
-                f"{m['role']}: {m['content']}"
-                for m in history[-5:]
-            ]
-        )
+        with tracer.start_as_current_span("General Chat") as span:
+            history_text = "\n".join(
+                [
+                    f"{m['role']}: {m['content']}"
+                    for m in history[-5:]
+                ]
+            )
 
-        prompt = f"""
+            prompt = f"""
 Conversation History:
 
 {history_text}
@@ -307,10 +337,10 @@ User Query:
 Respond naturally and conversationally.
 """
 
-        return await self.llm.process(
-            prompt,
-            user_id="general_chat"
-        )
+            return await self.llm.process(
+                prompt,
+                user_id="general_chat"
+            )
 
     # SYNTHESIS
 

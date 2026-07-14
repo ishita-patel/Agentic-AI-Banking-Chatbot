@@ -20,10 +20,13 @@ from backend.data_loader import BankDataLoader
 from backend.auth.auth_service import AuthService
 from backend.auth.dependencies import get_current_user
 from backend.auth.jwt_handler import create_access_token
+from backend.observability.telemetry import setup_telemetry
 
 app = FastAPI(
     title="Agentic Bank Multi-Agent System"
 )
+
+tracer = setup_telemetry(app)
 
 app.add_middleware(
     CORSMiddleware,

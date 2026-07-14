@@ -1,6 +1,8 @@
 import os
 from groq import Groq
 from dotenv import load_dotenv
+from opentelemetry import trace
+import time
 
 load_dotenv()
 
@@ -13,6 +15,8 @@ class GroqAgent:
         print("================================\n")
         self.is_available = False
         self.client = None
+        self.tracer = trace.get_tracer(__name__)
+        self.MODEL_NAME = "llama-3.3-70b-versatile"
 
         if self.api_key and self.api_key.startswith("gsk_"):
             try:
@@ -41,39 +45,52 @@ class GroqAgent:
             return "AI service unavailable."
 
         default_prompt = """
-You are Aiko Bank's intelligent AI assistant.
+            You are Aiko Bank's intelligent AI assistant.
 
-Responsibilities:
-- Help users with banking services
-- Analyze intent
-- Route requests
-- Summarize agent outputs
-- Answer financial questions
+            Responsibilities:
+            - Help users with banking services
+            - Analyze intent
+            - Route requests
+            - Summarize agent outputs
+            - Answer financial questions
 
-Guidelines:
-- Be professional
-- Be concise
-- Be accurate
-- Be conversational
-- If information is unavailable, clearly say so
-"""
+            Guidelines:
+            - Be professional
+            - Be concise
+            - Be accurate
+            - Be conversational
+            - If information is unavailable, clearly say so
+            """
 
         try:
-            response = self.client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt or default_prompt
-                    },
-                    {
-                        "role": "user",
-                        "content": message
-                    }
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
+            start = time.time()
+            
+            with self.tracer.start_as_current_span("Groq API") as span:
+                response = self.client.chat.completions.create(
+                    model=self.MODEL_NAME,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": system_prompt or default_prompt
+                        },
+                        {
+                            "role": "user",
+                            "content": message
+                        }
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+                
+                latency = time.time() - start
+                
+                span.set_attribute("latency_seconds", latency)
+                span.set_attribute("model", self.MODEL_NAME)
+                
+                if hasattr(response, 'usage') and response.usage:
+                    span.set_attribute("prompt_tokens", response.usage.prompt_tokens)
+                    span.set_attribute("completion_tokens", response.usage.completion_tokens)
+                    span.set_attribute("total_tokens", response.usage.total_tokens)
 
             return response.choices[0].message.content.strip()
 
