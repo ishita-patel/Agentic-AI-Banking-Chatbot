@@ -32,11 +32,6 @@ class BaseAgent(ABC):
                 ),
                 system_prompt=system_prompt,
                 operation=self.name,
-                parent_trace=(
-                    context.get("parent_trace")
-                    if context
-                    else None
-                )
             )
         except Exception as e:
             return f"Error: {str(e)}"

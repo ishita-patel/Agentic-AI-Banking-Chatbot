@@ -16,10 +16,6 @@ from backend.agents.web_search_agent import WebSearchAgent
 #from backend.agents.rag_agent import RAGAgent
 from backend.agents.groq_agent import GroqAgent
 
-from opentelemetry.trace import Status, StatusCode
-import time
-
-from backend.services.langfuse_client import langfuse
 
 tracer = trace.get_tracer(__name__)
 

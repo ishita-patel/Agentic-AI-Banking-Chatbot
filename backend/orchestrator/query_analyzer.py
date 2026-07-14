@@ -2,16 +2,16 @@ import json
 import re
 from typing import Dict, Any
 from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from backend.agents.groq_agent import GroqAgent
-
-tracer = trace.get_tracer(__name__)
 
 
 class QueryAnalyzer:
 
     def __init__(self):
         self.llm = GroqAgent()
+        self.tracer = trace.get_tracer("aiko-bank.query_analyzer")  # Changed tracer name
 
     async def analyze(
         self,
@@ -23,60 +23,12 @@ class QueryAnalyzer:
 
         history = history or []
 
-        try:
+        # Start span first, then handle errors inside it
+        with self.tracer.start_as_current_span(
+            "LLM Router"
+        ) as span:
 
-            history_text = "\n".join(
-                [
-                    f"{msg['role']}: {msg['content']}"
-                    for msg in history[-5:]
-                ]
-            )
-
-            prompt = f"""
-            You are a banking query router.
-
-            Classify the query into ONE primary domain and optional secondary domains.
-
-            Available domains:
-
-            balance
-            statement
-            loan
-            travel
-            calculator
-            health
-            investment
-            tax
-            legal
-            web_search
-            rag
-            general
-
-            Conversation History:
-            {history_text}
-
-            Current Query:
-            {query}
-
-            Has Documents:
-            {has_documents}
-
-            Return ONLY valid JSON.
-
-            Example:
-
-            {{
-                "primary_domain":"loan",
-                "secondary_domains":["calculator"],
-                "intent":"loan_query",
-                "complexity":"medium",
-                "confidence":0.95
-            }}
-            """
-
-            with tracer.start_as_current_span(
-                "LLM Router"
-            ) as span:
+            try:
 
                 span.set_attribute(
                     "temperature",
@@ -88,99 +40,178 @@ class QueryAnalyzer:
                     has_documents
                 )
 
-                response = await self.llm.process(
-                    prompt,
-                    user_id="query_analyzer",
-                    temperature=0
+                history_text = "\n".join(
+                    [
+                        f"{msg['role']}: {msg['content']}"
+                        for msg in history[-5:]
+                    ]
                 )
 
-            print("\n========== RAW ROUTER RESPONSE ==========")
-            print(type(response))
-            print(response)
-            print("=========================================\n")
+                prompt = f"""
+                You are a banking query router.
 
-            # CASE 1: GroqAgent returns dict
+                Classify the query into ONE primary domain and optional secondary domains.
 
+                Available domains:
 
-            if isinstance(response, dict):
+                balance
+                statement
+                loan
+                travel
+                calculator
+                health
+                investment
+                tax
+                legal
+                web_search
+                rag
+                general
 
-                if "response" in response:
-                    response_text = response["response"]
-                elif "message" in response:
-                    response_text = response["message"]
+                Conversation History:
+                {history_text}
+
+                Current Query:
+                {query}
+
+                Has Documents:
+                {has_documents}
+
+                Return ONLY valid JSON.
+
+                Example:
+
+                {{
+                    "primary_domain":"loan",
+                    "secondary_domains":["calculator"],
+                    "intent":"loan_query",
+                    "complexity":"medium",
+                    "confidence":0.95
+                }}
+                """
+
+                response = await self.llm.process(
+                    prompt,
+                    user_id=user_id,  # Pass real user_id instead of hardcoded value
+                    temperature=0,
+                    operation="query_analyzer"
+                )
+
+                print("\n========== RAW ROUTER RESPONSE ==========")
+                print(type(response))
+                print(response)
+                print("=========================================\n")
+
+                # CASE 1: GroqAgent returns dict
+
+                if isinstance(response, dict):
+
+                    if "response" in response:
+                        response_text = response["response"]
+                    elif "message" in response:
+                        response_text = response["message"]
+                    else:
+                        response_text = str(response)
+
                 else:
                     response_text = str(response)
 
-            else:
-                response_text = str(response)
+                # Extract JSON if wrapped in text
+                
+                json_match = re.search(
+                    r'\{.*\}',
+                    response_text,
+                    re.DOTALL
+                )
 
-            # Extract JSON if wrapped in text
-            
-            json_match = re.search(
-                r'\{.*\}',
-                response_text,
-                re.DOTALL
-            )
+                if json_match:
+                    response_text = json_match.group(0)
 
-            if json_match:
-                response_text = json_match.group(0)
+                print("\n========== CLEANED JSON ==========")
+                print(response_text)
+                print("==================================\n")
 
-            print("\n========== CLEANED JSON ==========")
-            print(response_text)
-            print("==================================\n")
+                result = json.loads(response_text)
 
-            result = json.loads(response_text)
+                result.setdefault(
+                    "primary_domain",
+                    "general"
+                )
 
-            result.setdefault(
-                "primary_domain",
-                "general"
-            )
+                result.setdefault(
+                    "secondary_domains",
+                    []
+                )
 
-            result.setdefault(
-                "secondary_domains",
-                []
-            )
+                result.setdefault(
+                    "intent",
+                    "general_query"
+                )
 
-            result.setdefault(
-                "intent",
-                "general_query"
-            )
+                result.setdefault(
+                    "complexity",
+                    "simple"
+                )
 
-            result.setdefault(
-                "complexity",
-                "simple"
-            )
+                result.setdefault(
+                    "confidence",
+                    0.5
+                )
 
-            result.setdefault(
-                "confidence",
-                0.5
-            )
-
-            if has_documents:
-                if (
-                    "rag"
-                    not in result["secondary_domains"]
-                ):
-                    result["secondary_domains"].append(
+                if has_documents:
+                    if (
                         "rag"
-                    )
+                        not in result["secondary_domains"]
+                    ):
+                        result["secondary_domains"].append(
+                            "rag"
+                        )
 
-            print("\n========== ROUTING RESULT ==========")
-            print(result)
-            print("====================================\n")
+                # Record routing results on the Router span
+                span.set_attribute(
+                    "primary_domain",
+                    result["primary_domain"]
+                )
 
-            return result
+                span.set_attribute(
+                    "secondary_domains",
+                    ",".join(result["secondary_domains"])
+                )
 
-        except Exception as e:
+                span.set_attribute(
+                    "intent",
+                    result["intent"]
+                )
 
-            print(
-                f"Analyzer Error: {e}"
-            )
+                span.set_attribute(
+                    "confidence",
+                    result["confidence"]
+                )
 
-            return self.fallback_analysis(
-                query,
-                has_documents
-            )
+                # Mark success with proper status
+                span.set_attribute("success", True)
+                span.set_status(Status(StatusCode.OK))
+
+                print("\n========== ROUTING RESULT ==========")
+                print(result)
+                print("====================================\n")
+
+                return result
+
+            except Exception as e:
+
+                print(
+                    f"Analyzer Error: {e}"
+                )
+
+                # Record exception and failure with proper status
+                span.record_exception(e)
+                span.set_attribute("success", False)
+                span.set_status(Status(StatusCode.ERROR))
+
+                return self.fallback_analysis(
+                    query,
+                    has_documents
+                )
 
     def fallback_analysis(
         self,
