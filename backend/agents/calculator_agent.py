@@ -26,7 +26,7 @@ class CalculatorAgent(BaseAgent):
         Make it accurate and easy to understand.
         """
         
-        response = await self.get_llm_response(system_prompt, query)
+        response = await self.get_llm_response(system_prompt, query, context)
         
         return {
             "success": True,

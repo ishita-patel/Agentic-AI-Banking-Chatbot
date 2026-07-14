@@ -57,7 +57,7 @@ class LoanAgent(BaseAgent):
         Make it professional and actionable.
         """
         
-        response = await self.get_llm_response(system_prompt, query)
+        response = await self.get_llm_response(system_prompt, query, context)
         
         return {
             "success": True,

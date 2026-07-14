@@ -82,7 +82,7 @@ class TaxAgent(BaseAgent):
         "This is general tax guidance. Please consult a chartered accountant for your specific situation."
         """
         
-        response = await self.get_llm_response(system_prompt, query)
+        response = await self.get_llm_response(system_prompt, query, context)
         
         return {
             "success": True,

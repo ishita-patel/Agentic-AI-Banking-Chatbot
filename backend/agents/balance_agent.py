@@ -46,7 +46,7 @@ class BalanceAgent(BaseAgent):
         5. Keep response under 200 words
         """
         
-        response = await self.get_llm_response(system_prompt, query)
+        response = await self.get_llm_response(system_prompt, query, context)
         
         return {
             "success": True,

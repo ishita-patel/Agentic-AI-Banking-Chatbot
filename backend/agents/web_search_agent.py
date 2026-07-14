@@ -83,7 +83,8 @@ SOURCES
 
         response = await self.get_llm_response(
             system_prompt,
-            query
+            query,
+            context
         )
 
         return {

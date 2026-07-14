@@ -29,7 +29,7 @@ class HealthAgent(BaseAgent):
         Make it professional and helpful.
         """
         
-        response = await self.get_llm_response(system_prompt, query)
+        response = await self.get_llm_response(system_prompt, query, context)
         
         return {
             "success": True,

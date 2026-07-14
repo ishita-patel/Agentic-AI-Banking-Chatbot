@@ -16,6 +16,11 @@ from backend.agents.web_search_agent import WebSearchAgent
 #from backend.agents.rag_agent import RAGAgent
 from backend.agents.groq_agent import GroqAgent
 
+from opentelemetry.trace import Status, StatusCode
+import time
+
+from backend.services.langfuse_client import langfuse
+
 tracer = trace.get_tracer(__name__)
 
 class Orchestrator:
@@ -84,12 +89,14 @@ class Orchestrator:
         has_documents: bool = False
     ) -> Dict[str, Any]:
 
-        with tracer.start_as_current_span("Orchestrator.process") as span:
+        # CREATE CHAT_REQUEST TRACE AROUND THE ENTIRE PROCESS
+        with tracer.start_as_current_span("chat_request") as chat_span:
+            
+            # Set initial attributes
+            chat_span.set_attribute("user_id", user_id)
+            chat_span.set_attribute("query_length", len(query))
+            
             try:
-                # Business Metrics
-                span.set_attribute("user_id", user_id)
-                span.set_attribute("query_length", len(query))
-
                 self.save_message(
                     user_id,
                     "user",
@@ -98,8 +105,9 @@ class Orchestrator:
 
                 history = self.get_history(user_id)
 
-                # Query Analysis with tracing
-                with tracer.start_as_current_span("Query Analysis") as analysis_span:
+                # ROUTER SPAN - Query Analysis and Domain Routing
+                with tracer.start_as_current_span("Router") as router_span:
+                    
                     analysis = await self.query_analyzer.analyze(
                         query=query,
                         user_id=user_id,
@@ -107,61 +115,54 @@ class Orchestrator:
                         history=history
                     )
                     
-                    analysis_span.set_attribute(
-                        "primary_domain",
-                        analysis.get("primary_domain")
-                    )
-                    analysis_span.set_attribute(
-                        "intent",
-                        analysis.get("intent")
-                    )
-                    analysis_span.set_attribute(
-                        "confidence",
-                        analysis.get("confidence")
-                    )
-                
-                print("\n========== ANALYSIS ==========")
-                print(analysis)
-                print("==============================")
+                    # Set Router attributes
+                    primary_domain = analysis.get("primary_domain", "general")
+                    secondary_domains = analysis.get("secondary_domains", [])
+                    
+                    router_span.set_attribute("primary_domain", primary_domain)
+                    router_span.set_attribute("secondary_domains", str(secondary_domains))
+                    router_span.set_attribute("intent", analysis.get("intent"))
+                    router_span.set_attribute("confidence", analysis.get("confidence"))
+                    
+                    # Set chat_request attributes
+                    chat_span.set_attribute("primary_domain", primary_domain)
+                    chat_span.set_attribute("secondary_domains", str(secondary_domains))
+                    
+                    print("\n========== ANALYSIS ==========")
+                    print(analysis)
+                    print("==============================")
 
-                # DOCUMENT MODE OVERRIDE
+                    # DOCUMENT MODE OVERRIDE
 
-                if has_documents:
+                    if has_documents:
 
-                    print("\n========== DOCUMENT MODE ==========")
-                    print("FORCING RAG ONLY")
-                    print("===================================")
+                        print("\n========== DOCUMENT MODE ==========")
+                        print("FORCING RAG ONLY")
+                        print("===================================")
 
-                    domains = ["rag"]
+                        domains = ["rag"]
 
-                # NORMAL ROUTING
+                    # NORMAL ROUTING
 
-                else:
+                    else:
 
-                    primary_domain = analysis.get(
-                        "primary_domain",
-                        "general"
-                    )
+                        domains = []
 
-                    secondary_domains = analysis.get(
-                        "secondary_domains",
-                        []
-                    )
+                        if primary_domain != "general":
+                            domains.append(primary_domain)
 
-                    domains = []
+                        domains.extend(secondary_domains)
 
-                    if primary_domain != "general":
-                        domains.append(primary_domain)
+                        domains = list(dict.fromkeys(domains))
 
-                    domains.extend(secondary_domains)
+                    # Set agents attribute on chat_request trace
+                    chat_span.set_attribute("agents", str(domains))
+                    chat_span.set_attribute("agent_count", len(domains))
+                    router_span.set_attribute("routed_agents", str(domains))
 
-                    domains = list(dict.fromkeys(domains))
-
-                span.set_attribute("agent_count", len(domains))
-
-                print("\n========== DOMAINS ==========")
-                print(domains)
-                print("=============================")
+                    print("\n========== DOMAINS ==========")
+                    print(domains)
+                    print("=============================")
 
                 if not domains:
 
@@ -176,6 +177,9 @@ class Orchestrator:
                         response
                     )
 
+                    # Set success attribute
+                    chat_span.set_attribute("success", True)
+                    
                     return {
                         "success": True,
                         "response": response,
@@ -190,6 +194,7 @@ class Orchestrator:
                 print(domains)
                 print("======================================")
                 
+                # EXECUTE AGENTS WITH INDIVIDUAL SPANS
                 for domain in domains:
 
                     if domain not in self.agents:
@@ -203,20 +208,29 @@ class Orchestrator:
                             "query": query,
                             "analysis": analysis,
                             "history": history,
-                            "has_documents": has_documents
+                            "has_documents": has_documents,
+                            "user_id": user_id
                         }
 
-                        # Agent execution with tracing
+                        # Create individual span for each agent execution
+                        # This will create spans like "agent.loan", "agent.calculator", etc.
                         with tracer.start_as_current_span(
-                            f"{domain}_agent"
+                            f"agent.{domain}"
                         ) as agent_span:
                             
                             agent_span.set_attribute("agent", domain)
+                            agent_span.set_attribute("agent_type", domain)
                             
                             result = await agent.process(
                                 user_id,
                                 query,
                                 context
+                            )
+                            
+                            agent_span.set_attribute("success", result.get("success", False))
+                            agent_span.set_attribute(
+                                "response_length",
+                                len(result.get("message", ""))
                             )
 
                         if result.get("success"):
@@ -253,6 +267,9 @@ class Orchestrator:
                         response
                     )
 
+                    # Set success attribute
+                    chat_span.set_attribute("success", True)
+
                     return {
                         "success": True,
                         "response": response,
@@ -266,23 +283,22 @@ class Orchestrator:
 
                     final_response = agent_results[0]
 
-                # Multi Agent Synthesis with tracing
-
+                # Multi Agent Synthesis
                 else:
-                    with tracer.start_as_current_span(
-                        "Response Synthesis"
-                    ) as synthesis_span:
-                        
-                        final_response = await self.synthesize_results(
-                            query,
-                            agent_results
-                        )
+                    # Call synthesize_results - it will create its own Synthesizer span
+                    final_response = await self.synthesize_results(
+                        query,
+                        agent_results
+                    )
 
                 self.save_message(
                     user_id,
                     "assistant",
                     final_response
                 )
+
+                # Set success attribute
+                chat_span.set_attribute("success", True)
 
                 return {
                     "success": True,
@@ -299,6 +315,10 @@ class Orchestrator:
             except Exception as e:
 
                 print(f"Orchestrator Error: {e}")
+                
+                # Set success attribute to False on error
+                chat_span.set_attribute("success", False)
+                chat_span.record_exception(e)
 
                 return {
                     "success": False,
@@ -350,11 +370,13 @@ Respond naturally and conversationally.
         agent_outputs
     ):
 
-        combined = "\n\n".join(
-            agent_outputs
-        )
+        with tracer.start_as_current_span("Synthesizer") as synthesis_span:
+            
+            combined = "\n\n".join(
+                agent_outputs
+            )
 
-        prompt = f"""
+            prompt = f"""
 User Query:
 {query}
 
@@ -370,10 +392,17 @@ Rules:
 - Provide actionable guidance
 """
 
-        return await self.llm.process(
-            prompt,
-            user_id="synthesizer"
-        )
+            synthesis_span.set_attribute("input_length", len(combined))
+            synthesis_span.set_attribute("prompt_length", len(prompt))
+            
+            result = await self.llm.process(
+                prompt,
+                user_id="synthesizer"
+            )
+            
+            synthesis_span.set_attribute("output_length", len(result))
+            
+            return result
 
     # DOCUMENT UPLOAD
 
