@@ -10,8 +10,8 @@ processors:
   batch:
 
 exporters:
-  otlp_grpc:
-    endpoint: jaeger:4317
+  otlp:
+    endpoint: tempo:4317
     tls:
       insecure: true
 
@@ -20,4 +20,4 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp_grpc]
+      exporters: [otlp]
