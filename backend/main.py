@@ -59,6 +59,7 @@ class ChatResponse(BaseModel):
     analysis: dict
     agents_used: list
     timestamp: datetime
+    judge: dict = {}  # Added judge field
 
 
 class LoginRequest(BaseModel):
@@ -312,7 +313,11 @@ async def chat(
                 "agents_used",
                 []
             ),
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
+            judge=result.get(  # Added judge field
+                "judge",
+                {}
+            )
         )
 
     except Exception as e:
@@ -321,7 +326,8 @@ async def chat(
             response=f"Error: {str(e)}",
             analysis={},
             agents_used=["error"],
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
+            judge={}  # Added empty judge for error case
         )
 
 

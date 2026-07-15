@@ -1,5 +1,6 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from opentelemetry import trace
+import asyncio
 
 from backend.orchestrator.query_analyzer import QueryAnalyzer
 from backend.agents.groq_agent import GroqAgent
@@ -15,6 +16,7 @@ from backend.agents.legal_agent import LegalAgent
 from backend.agents.web_search_agent import WebSearchAgent
 #from backend.agents.rag_agent import RAGAgent
 from backend.agents.groq_agent import GroqAgent
+from backend.judge.llm_judge import LLMJudge
 
 
 tracer = trace.get_tracer(__name__)
@@ -27,6 +29,8 @@ class Orchestrator:
         self.llm = GroqAgent()
         self.agents = self.initialize_agents()
         self.conversation_memory = {}
+        self.judge = LLMJudge()
+        self.judge_enabled = True  # Can be disabled via config
 
     # AGENT REGISTRY
 
@@ -76,13 +80,73 @@ class Orchestrator:
             self.conversation_memory[user_id][-10:]
         )
 
+    # JUDGE HELPER
+
+    async def evaluate_response(
+        self,
+        query: str,
+        response: str,
+        analysis: Dict[str, Any],
+        user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Evaluate a response using the LLM Judge.
+        Runs asynchronously and can be called in the background.
+        """
+        if not self.judge_enabled:
+            return {}
+
+        try:
+            # LLMJudge.evaluate() is now async - use await
+            judge_result = await self.judge.evaluate(
+                query=query,
+                response=response,
+                context=str(analysis)
+            )
+            
+            return judge_result
+            
+        except Exception as e:
+            print(f"Judge evaluation failed: {e}")
+            # Return a default dictionary to avoid None causing Pydantic validation errors
+            return {
+                "correctness": 0.0,
+                "helpfulness": 0.0,
+                "groundedness": 0.0,
+                "safety": 0.0,
+                "hallucination": True,
+                "confidence": 0.0,
+                "reason": f"Evaluation failed: {str(e)}"
+            }
+
+    async def save_judge_result(
+        self,
+        user_id: str,
+        query: str,
+        judge_result: Dict[str, Any]
+    ):
+        """
+        Persist judge results for analytics.
+        Override this method to save to your database.
+        """
+        # TODO: Save to MongoDB, PostgreSQL, or Langfuse
+        # Example:
+        # await db.judge_results.insert_one({
+        #     "user_id": user_id,
+        #     "query": query,
+        #     "timestamp": datetime.utcnow(),
+        #     "judge_result": judge_result
+        # })
+        pass
+
     # MAIN PROCESSOR
 
     async def process(
         self,
         user_id: str,
         query: str,
-        has_documents: bool = False
+        has_documents: bool = False,
+        skip_judge: bool = False
     ) -> Dict[str, Any]:
 
         # CREATE CHAT_REQUEST TRACE AROUND THE ENTIRE PROCESS
@@ -185,12 +249,26 @@ class Orchestrator:
                     chat_span.set_attribute("success", True)
                     chat_span.add_event("Chat request completed")
                     
-                    return {
+                    result = {
                         "success": True,
                         "response": response,
                         "analysis": analysis,
                         "agents_used": ["groq"]
                     }
+                    
+                    # Run judge in background (fire and forget)
+                    if not skip_judge:
+                        # Evaluate response and store result
+                        judge_result = await self.evaluate_response(
+                            query=query,
+                            response=response,
+                            analysis=analysis,
+                            user_id=user_id
+                        )
+                        if judge_result:
+                            result["judge"] = judge_result
+                    
+                    return result
 
                 agent_results = []
                 successful_agents = []
@@ -309,12 +387,25 @@ class Orchestrator:
                     chat_span.set_attribute("success", True)
                     chat_span.add_event("Chat request completed with fallback")
 
-                    return {
+                    result = {
                         "success": True,
                         "response": response,
                         "analysis": analysis,
                         "agents_used": ["groq"]
                     }
+                    
+                    # Run judge in background (fire and forget)
+                    if not skip_judge:
+                        judge_result = await self.evaluate_response(
+                            query=query,
+                            response=response,
+                            analysis=analysis,
+                            user_id=user_id
+                        )
+                        if judge_result:
+                            result["judge"] = judge_result
+
+                    return result
 
                 # Single Agent
 
@@ -342,7 +433,7 @@ class Orchestrator:
                 chat_span.set_attribute("primary_agent", successful_agents[0] if successful_agents else "groq")
                 chat_span.add_event("Chat request completed")
 
-                return {
+                result = {
                     "success": True,
                     "response": final_response,
                     "analysis": analysis,
@@ -353,6 +444,19 @@ class Orchestrator:
                         else "groq"
                     )
                 }
+                
+                # Run judge (synchronously but returns immediately)
+                if not skip_judge:
+                    judge_result = await self.evaluate_response(
+                        query=query,
+                        response=final_response,
+                        analysis=analysis,
+                        user_id=user_id
+                    )
+                    if judge_result:
+                        result["judge"] = judge_result
+
+                return result
 
             except Exception as e:
 
@@ -363,14 +467,21 @@ class Orchestrator:
                 chat_span.record_exception(e)
                 chat_span.add_event("Chat request failed")
 
-                return {
+                error_response = (
+                    "I encountered an error "
+                    "processing your request."
+                )
+                
+                result = {
                     "success": False,
-                    "response": (
-                        "I encountered an error "
-                        "processing your request."
-                    ),
+                    "response": error_response,
                     "agents_used": ["error"]
                 }
+                
+                # Skip judge for errors - no useful information
+                # But we could log the error for monitoring
+                
+                return result
 
     # GENERAL CHAT
 
