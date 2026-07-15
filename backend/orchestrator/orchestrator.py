@@ -17,6 +17,7 @@ from backend.agents.web_search_agent import WebSearchAgent
 #from backend.agents.rag_agent import RAGAgent
 from backend.agents.groq_agent import GroqAgent
 from backend.judge.llm_judge import LLMJudge
+from backend.security.kill_switch import KillSwitch
 
 
 tracer = trace.get_tracer(__name__)
@@ -158,7 +159,42 @@ class Orchestrator:
             chat_span.set_attribute("has_documents", has_documents)
             chat_span.add_event("Chat request started")
             
+            print("\n===== BEFORE KILL SWITCH =====")
+            print(query)
+            print("==============================")
+
             try:
+                # KILL SWITCH - Check for malicious/unsafe queries
+                safe, reason = KillSwitch.check(query)
+
+                print("SAFE =", safe)
+                print("REASON =", reason)
+
+                print("\n========== KILL SWITCH ==========")
+                print("QUERY:", query)
+                print("SAFE:", safe)
+                print("REASON:", reason)
+                print("=================================\n")
+                
+                if not safe:
+                    # Log the blocked request
+                    print(f"⚠️ KILL SWITCH TRIGGERED - User: {user_id}, Reason: {reason}")
+                    
+                    # Set attributes for blocked request
+                    chat_span.set_attribute("blocked", True)
+                    chat_span.set_attribute("block_reason", reason)
+                    chat_span.set_attribute("success", False)
+                    chat_span.add_event("Request blocked by kill switch")
+                    
+                    # Return blocked response
+                    return {
+                        "success": False,
+                        "response": "I'm here to assist with banking-related requests and other supported tasks, but I can't process requests that attempt to change or bypass my operating instructions.",
+                        "blocked": True,
+                        "reason": reason,
+                        "agents_used": []
+                    }
+                
                 self.save_message(
                     user_id,
                     "user",
