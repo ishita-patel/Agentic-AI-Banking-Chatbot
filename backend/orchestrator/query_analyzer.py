@@ -132,6 +132,30 @@ class QueryAnalyzer:
 
                 result = json.loads(response_text)
 
+                # NEW: Add span attributes immediately after parsing result
+                span.set_attribute(
+                    "primary_domain",
+                    result["primary_domain"]
+                )
+
+                span.set_attribute(
+                    "secondary_domains",
+                    ",".join(result["secondary_domains"])
+                )
+
+                span.set_attribute(
+                    "intent",
+                    result["intent"]
+                )
+
+                span.set_attribute(
+                    "confidence",
+                    result["confidence"]
+                )
+
+                # NEW: Add event for intent classification
+                span.add_event("Intent classified")
+
                 result.setdefault(
                     "primary_domain",
                     "general"

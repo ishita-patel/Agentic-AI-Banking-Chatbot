@@ -81,6 +81,9 @@ class GroqAgent:
             span.set_attribute("prompt_chars", len(message))
             
             try:
+                # Add event: Sending request to Groq
+                span.add_event("Sending request to Groq")
+                
                 start = time.time()
                 
                 response = self.client.chat.completions.create(
@@ -99,6 +102,9 @@ class GroqAgent:
                     max_tokens=max_tokens
                 )
                 
+                # Add event: Response received from Groq
+                span.add_event("Response received from Groq")
+                
                 output = response.choices[0].message.content.strip()
                 
                 # Calculate metrics
@@ -109,12 +115,21 @@ class GroqAgent:
                 span.set_attribute("latency_seconds", latency)
                 span.set_attribute("response_chars", response_chars)
                 span.set_attribute("success", True)
+                span.set_attribute("user_id", user_id)
+                span.set_attribute("operation", operation)
+                span.set_attribute("model", self.MODEL_NAME)
                 
                 # Handle usage safely - Groq usually returns it but guard anyway
                 if hasattr(response, "usage") and response.usage:
                     span.set_attribute("prompt_tokens", response.usage.prompt_tokens)
                     span.set_attribute("completion_tokens", response.usage.completion_tokens)
                     span.set_attribute("total_tokens", response.usage.total_tokens)
+                
+                # Set span status to OK for success
+                span.set_status(Status(StatusCode.OK))
+                
+                # Add event: LLM call completed
+                span.add_event("LLM call completed")
                 
                 return output
 

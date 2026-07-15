@@ -91,6 +91,8 @@ class Orchestrator:
             # Set initial attributes
             chat_span.set_attribute("user_id", user_id)
             chat_span.set_attribute("query_length", len(query))
+            chat_span.set_attribute("has_documents", has_documents)
+            chat_span.add_event("Chat request started")
             
             try:
                 self.save_message(
@@ -103,6 +105,11 @@ class Orchestrator:
 
                 # ROUTER SPAN - Query Analysis and Domain Routing
                 with tracer.start_as_current_span("Router") as router_span:
+                    
+                    router_span.set_attribute("user_id", user_id)
+                    router_span.set_attribute("query_length", len(query))
+                    router_span.set_attribute("has_documents", has_documents)
+                    router_span.add_event("Routing analysis started")
                     
                     analysis = await self.query_analyzer.analyze(
                         query=query,
@@ -117,8 +124,8 @@ class Orchestrator:
                     
                     router_span.set_attribute("primary_domain", primary_domain)
                     router_span.set_attribute("secondary_domains", str(secondary_domains))
-                    router_span.set_attribute("intent", analysis.get("intent"))
-                    router_span.set_attribute("confidence", analysis.get("confidence"))
+                    router_span.set_attribute("intent", analysis.get("intent", "unknown"))
+                    router_span.set_attribute("confidence", analysis.get("confidence", 0.0))
                     
                     # Set chat_request attributes
                     chat_span.set_attribute("primary_domain", primary_domain)
@@ -155,6 +162,7 @@ class Orchestrator:
                     chat_span.set_attribute("agents", str(domains))
                     chat_span.set_attribute("agent_count", len(domains))
                     router_span.set_attribute("routed_agents", str(domains))
+                    router_span.add_event("Routing analysis completed")
 
                     print("\n========== DOMAINS ==========")
                     print(domains)
@@ -175,6 +183,7 @@ class Orchestrator:
 
                     # Set success attribute
                     chat_span.set_attribute("success", True)
+                    chat_span.add_event("Chat request completed")
                     
                     return {
                         "success": True,
@@ -209,25 +218,52 @@ class Orchestrator:
                         }
 
                         # Create individual span for each agent execution
-                        # This will create spans like "agent.loan", "agent.calculator", etc.
                         with tracer.start_as_current_span(
                             f"agent.{domain}"
                         ) as agent_span:
                             
-                            agent_span.set_attribute("agent", domain)
+                            # Set agent identification attributes
+                            agent_span.set_attribute("agent_name", domain)
                             agent_span.set_attribute("agent_type", domain)
+                            agent_span.set_attribute("user_id", user_id)
+                            agent_span.set_attribute("query_length", len(query))
                             
+                            # Determine if agent uses LLM based on type
+                            # Deterministic agents that don't use LLM
+                            deterministic_agents = ["calculator", "balance", "statement"]
+                            uses_llm = domain not in deterministic_agents
+                            agent_span.set_attribute("llm_used", uses_llm)
+                            
+                            # Add start event
+                            agent_span.add_event("Agent execution started")
+                            
+                            # Execute the agent
                             result = await agent.process(
                                 user_id,
                                 query,
                                 context
                             )
                             
-                            agent_span.set_attribute("success", result.get("success", False))
-                            agent_span.set_attribute(
-                                "response_length",
-                                len(result.get("message", ""))
-                            )
+                            # Set success/failure
+                            success = result.get("success", False)
+                            agent_span.set_attribute("success", success)
+                            agent_span.set_attribute("status", "success" if success else "failure")
+                            
+                            # Add response length if available
+                            if "message" in result:
+                                agent_span.set_attribute(
+                                    "response_length",
+                                    len(result.get("message", ""))
+                                )
+                            
+                            # Add completion event
+                            agent_span.add_event("Agent execution completed")
+                            
+                            # Record any errors if they occurred
+                            if not success and "error" in result:
+                                agent_span.record_exception(
+                                    Exception(result.get("error", "Unknown error"))
+                                )
 
                         if result.get("success"):
 
@@ -243,10 +279,16 @@ class Orchestrator:
                             )
 
                     except Exception as e:
-
-                        print(
-                            f"{domain} agent error: {e}"
-                        )
+                        
+                        # Handle agent exception with span
+                        print(f"{domain} agent error: {e}")
+                        
+                        # Try to get current span to record exception
+                        current_span = trace.get_current_span()
+                        if current_span:
+                            current_span.set_attribute("status", "failure")
+                            current_span.record_exception(e)
+                            current_span.add_event("Agent execution failed")
 
                 # Fallback
 
@@ -265,6 +307,7 @@ class Orchestrator:
 
                     # Set success attribute
                     chat_span.set_attribute("success", True)
+                    chat_span.add_event("Chat request completed with fallback")
 
                     return {
                         "success": True,
@@ -295,6 +338,9 @@ class Orchestrator:
 
                 # Set success attribute
                 chat_span.set_attribute("success", True)
+                chat_span.set_attribute("successful_agents", str(successful_agents))
+                chat_span.set_attribute("primary_agent", successful_agents[0] if successful_agents else "groq")
+                chat_span.add_event("Chat request completed")
 
                 return {
                     "success": True,
@@ -315,6 +361,7 @@ class Orchestrator:
                 # Set success attribute to False on error
                 chat_span.set_attribute("success", False)
                 chat_span.record_exception(e)
+                chat_span.add_event("Chat request failed")
 
                 return {
                     "success": False,
@@ -334,6 +381,12 @@ class Orchestrator:
     ):
 
         with tracer.start_as_current_span("General Chat") as span:
+            
+            span.set_attribute("query_length", len(query))
+            span.set_attribute("history_length", len(history))
+            span.set_attribute("llm_used", True)
+            span.add_event("General chat processing started")
+            
             history_text = "\n".join(
                 [
                     f"{m['role']}: {m['content']}"
@@ -353,10 +406,16 @@ User Query:
 Respond naturally and conversationally.
 """
 
-            return await self.llm.process(
+            result = await self.llm.process(
                 prompt,
                 user_id="general_chat"
             )
+            
+            span.set_attribute("response_length", len(result))
+            span.set_attribute("success", True)
+            span.add_event("General chat processing completed")
+            
+            return result
 
     # SYNTHESIS
 
@@ -367,6 +426,10 @@ Respond naturally and conversationally.
     ):
 
         with tracer.start_as_current_span("Synthesizer") as synthesis_span:
+            
+            synthesis_span.set_attribute("num_agent_outputs", len(agent_outputs))
+            synthesis_span.set_attribute("llm_used", True)
+            synthesis_span.add_event("Synthesis started")
             
             combined = "\n\n".join(
                 agent_outputs
@@ -397,6 +460,8 @@ Rules:
             )
             
             synthesis_span.set_attribute("output_length", len(result))
+            synthesis_span.set_attribute("success", True)
+            synthesis_span.add_event("Synthesis completed")
             
             return result
 
@@ -408,19 +473,33 @@ Rules:
         file_path
     ):
 
-        rag_agent = self.agents.get("rag")
+        with tracer.start_as_current_span("Document Upload") as span:
+            
+            span.set_attribute("user_id", user_id)
+            span.set_attribute("file_path", file_path)
+            span.add_event("Document upload started")
+            
+            rag_agent = self.agents.get("rag")
 
-        if not rag_agent:
+            if not rag_agent:
+                
+                span.set_attribute("success", False)
+                span.add_event("Document upload failed - RAG unavailable")
+                
+                return {
+                    "success": False,
+                    "message": "RAG unavailable"
+                }
 
-            return {
-                "success": False,
-                "message": "RAG unavailable"
-            }
-
-        return await rag_agent.upload_document(
-            user_id,
-            file_path
-        )
+            result = await rag_agent.upload_document(
+                user_id,
+                file_path
+            )
+            
+            span.set_attribute("success", result.get("success", False))
+            span.add_event("Document upload completed")
+            
+            return result
 
     # STATUS
 
