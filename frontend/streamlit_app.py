@@ -14,10 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-API_URL = os.getenv(
-    "API_URL",
-    "https://aiko-bank-backend.onrender.com"
-)
+API_URL = "http://127.0.0.1:8000"
 
 try:
     response = requests.get(
@@ -423,6 +420,29 @@ st.markdown("""
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
         text-align: center;
     }
+
+    /* Custom styling for agent and judge display in chat messages */
+    .agent-label {
+        font-size: 0.75rem;
+        color: #dc2626;
+        margin-top: 0.25rem;
+        padding: 0.15rem 0;
+    }
+    
+    .judge-expander {
+        margin-top: 0.5rem;
+    }
+    
+    .judge-expander .streamlit-expanderHeader {
+        font-size: 0.8rem;
+        color: #dc2626;
+        background-color: transparent;
+        border-bottom: 1px solid #333333;
+    }
+    
+    .judge-metric {
+        font-size: 0.8rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -587,6 +607,8 @@ def init_session_state():
         st.session_state.mfa_username = None
     if "mfa_qr_generated" not in st.session_state:
         st.session_state.mfa_qr_generated = False
+    if "pending_pdf" not in st.session_state:
+        st.session_state.pending_pdf = None
 
 def fetch_user_profile(user_id, api_url):
     try:
@@ -629,10 +651,10 @@ def logout():
     st.session_state.mfa_secret = None
     st.session_state.mfa_username = None
     st.session_state.mfa_qr_generated = False
+    st.session_state.pending_pdf = None
     st.rerun()
 
 def send_message_and_get_response(message, user_id, api_url, has_documents=False):
-
     st.session_state.messages.append({
         "role": "user",
         "content": message,
@@ -640,7 +662,6 @@ def send_message_and_get_response(message, user_id, api_url, has_documents=False
     })
 
     try:
-
         print("\n======================================")
         print("FRONTEND REQUEST")
         print("API URL:", api_url)
@@ -671,29 +692,25 @@ def send_message_and_get_response(message, user_id, api_url, has_documents=False
         print("======================================\n")
 
         if response.status_code == 200:
-
             data = response.json()
-
-            bot_response = data.get(
-                "response",
-                "No response returned"
-            )
-
-            agents_used = data.get(
-                "agents_used",
-                []
-            )
-
-            st.session_state.messages.append({
+            
+            bot_response = data.get("response", "No response returned")
+            agents_used = data.get("agents_used", [])
+            judge_data = data.get("judge", {})
+            
+            # Create assistant message with additional metadata
+            assistant_msg = {
                 "role": "assistant",
                 "content": bot_response,
-                "timestamp": datetime.now().strftime("%H:%M")
-            })
-
+                "timestamp": datetime.now().strftime("%H:%M"),
+                "agents": agents_used,  # Store agents list
+                "judge": judge_data     # Store judge evaluation
+            }
+            
+            st.session_state.messages.append(assistant_msg)
             st.session_state.agents_used = agents_used
 
             if "statement" in message.lower():
-
                 statement_response = requests.post(
                     f"{api_url}/statement",
                     json={
@@ -705,9 +722,7 @@ def send_message_and_get_response(message, user_id, api_url, has_documents=False
                 )
 
                 if statement_response.status_code == 200:
-
                     pdf_content = statement_response.content
-
                     filename = (
                         f"statement_{user_id}_"
                         f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
@@ -717,39 +732,35 @@ def send_message_and_get_response(message, user_id, api_url, has_documents=False
                         delete=False,
                         suffix=".pdf"
                     ) as tmp:
-
                         tmp.write(pdf_content)
                         tmp_path = tmp.name
 
-                    st.session_state.pending_pdf = (
-                        tmp_path,
-                        filename
-                    )
+                    st.session_state.pending_pdf = (tmp_path, filename)
 
         elif response.status_code == 429:
-
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": (
                     "Daily interaction limit reached. "
                     "Please try again tomorrow."
                 ),
-                "timestamp": datetime.now().strftime("%H:%M")
+                "timestamp": datetime.now().strftime("%H:%M"),
+                "agents": [],
+                "judge": {}
             })
-
         else:
-
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": (
                     f"Backend Error {response.status_code}\n\n"
                     f"{response.text}"
                 ),
-                "timestamp": datetime.now().strftime("%H:%M")
+                "timestamp": datetime.now().strftime("%H:%M"),
+                "agents": [],
+                "judge": {}
             })
 
     except Exception as e:
-
         print("\n======================================")
         print("FRONTEND EXCEPTION")
         print(type(e))
@@ -758,10 +769,10 @@ def send_message_and_get_response(message, user_id, api_url, has_documents=False
 
         st.session_state.messages.append({
             "role": "assistant",
-            "content": (
-                f"Connection Error:\n\n{str(e)}"
-            ),
-            "timestamp": datetime.now().strftime("%H:%M")
+            "content": f"Connection Error:\n\n{str(e)}",
+            "timestamp": datetime.now().strftime("%H:%M"),
+            "agents": [],
+            "judge": {}
         })
 
     st.rerun()
@@ -928,7 +939,9 @@ def login_page():
                                             f"Your banking assistant is ready. "
                                             f"How may I assist you today?"
                                         ),
-                                        "timestamp": datetime.now().strftime("%H:%M")
+                                        "timestamp": datetime.now().strftime("%H:%M"),
+                                        "agents": [],
+                                        "judge": {}
                                     })
 
                                     st.rerun()
@@ -1095,7 +1108,9 @@ def login_page():
                                             f"Your banking assistant is ready. "
                                             f"How may I assist you today?"
                                         ),
-                                        "timestamp": datetime.now().strftime("%H:%M")
+                                        "timestamp": datetime.now().strftime("%H:%M"),
+                                        "agents": [],
+                                        "judge": {}
                                     })
 
                                     st.rerun()
@@ -1169,17 +1184,77 @@ def main_app():
         st.markdown("### 💬 Banking Assistant")
         st.caption("Ask anything - finance, travel, health, legal, document analysis...")
         
+        # Display all messages with enhanced features
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
+                # Display the content
                 st.write(msg["content"])
                 st.caption(msg["timestamp"])
+                
+                # If it's an assistant message, show additional info
+                if msg["role"] == "assistant":
+                    # Display agents if available
+                    if msg.get("agents") and len(msg.get("agents", [])) > 0:
+                        agents_text = ", ".join(msg["agents"])
+                        st.markdown(f'<div class="agent-label">🤖 Agents: {agents_text}</div>', unsafe_allow_html=True)
+                    
+                    # Display judge evaluation if available
+                    if msg.get("judge") and msg["judge"]:
+                        judge = msg["judge"]
+                        with st.expander("LLM Evaluation:"):
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.metric(
+                                    "Correctness",
+                                    f"{judge.get('correctness', 0)}/10",
+                                    help="Accuracy of the response"
+                                )
+                                st.metric(
+                                    "Helpfulness",
+                                    f"{judge.get('helpfulness', 0)}/10",
+                                    help="Usefulness of the response"
+                                )
+                            
+                            with col2:
+                                st.metric(
+                                    "Groundedness",
+                                    f"{judge.get('groundedness', 0)}/10",
+                                    help="How well the response is grounded in context"
+                                )
+                                st.metric(
+                                    "Safety",
+                                    f"{judge.get('safety', 0)}/10",
+                                    help="Safety of the response"
+                                )
+                            
+                            with col3:
+                                st.metric(
+                                    "Confidence",
+                                    f"{judge.get('confidence', 0):.2f}",
+                                    help="Confidence score of the response"
+                                )
+                                hallucination = "Yes" if judge.get("hallucination") else "No"
+                                st.metric(
+                                    "Hallucination",
+                                    hallucination,
+                                    help="Whether hallucination was detected"
+                                )
+                            
+                            st.markdown("**Reason**")
+                            st.write(
+                                judge.get(
+                                    "reason",
+                                    "No explanation available."
+                                )
+                            )
         
-        # Show agents used if available
+        # Show agents used if available (kept for backward compatibility)
         if st.session_state.agents_used and len(st.session_state.messages) > 0:
-            agents_text = " " + " | ".join([f"<span class='agent-badge'>{a}</span>" for a in st.session_state.agents_used])
+            agents_text = " | ".join([f"<span class='agent-badge'>{a}</span>" for a in st.session_state.agents_used])
             st.markdown(f'<div style="font-size: 0.7rem; color: #666; margin-top: -0.5rem; margin-bottom: 0.5rem;">{agents_text}</div>', unsafe_allow_html=True)
         
-        if hasattr(st.session_state, 'pending_pdf') and st.session_state.pending_pdf:
+        if st.session_state.pending_pdf:
             tmp_path, filename = st.session_state.pending_pdf
             with open(tmp_path, "rb") as f:
                 st.download_button(
@@ -1200,7 +1275,7 @@ def main_app():
     
     with chat_col2:
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-title">📎 Document Upload</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-title"> Document Upload</div>', unsafe_allow_html=True)
         
         uploaded_file = st.file_uploader(
             "Upload any document",
@@ -1270,7 +1345,7 @@ def main_app():
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-title">💰 Account Snapshot</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-title"> Account Snapshot</div>', unsafe_allow_html=True)
         
         # Safely get balances with fallback
         savings_balance = st.session_state.user_info.get('savings_balance', 0) if st.session_state.user_info else 0
@@ -1290,7 +1365,7 @@ def main_app():
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-title">⚡ Quick Actions</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-title"> Quick Actions</div>', unsafe_allow_html=True)
         
         actions = [
             ("Check Balance", "What is my account balance?"),
