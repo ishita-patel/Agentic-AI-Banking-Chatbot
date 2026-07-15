@@ -32,6 +32,20 @@ BLOCKED_PATTERNS = [
     r"dan\s+mode",
     r"disable\s+safety",
     r"ignore\s+safety",
+
+    #Standard
+    r"forget\s+you\s+are",
+    r"pretend\s+to\s+be",
+    r"act\s+as",
+    r"you\s+are\s+chatgpt",
+    r"you\s+are\s+claude",
+    r"you\s+are\s+gemini",
+    r"roleplay",
+    r"simulate",
+    r"disable\s+safety",
+    r"ignore\s+your\s+role",
+    r"override\s+instructions",
+    r"developer\s+mode",
 ]
 
 class KillSwitch:

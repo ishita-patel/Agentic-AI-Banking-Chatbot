@@ -31,6 +31,24 @@ class WebSearchAgent(BaseAgent):
             task
         ) if context else task
 
+        # Protect against accidental misuse
+        analysis = context.get("analysis", {}) if context else {}
+        
+        intent = analysis.get("intent", "")
+        primary_domain = analysis.get("primary_domain", "")
+        
+        if primary_domain != "web_search":
+            return {
+                "success": False,
+                "message": (
+                    "Web Search Agent received a request "
+                    "outside its supported scope."
+                ),
+                "data": {
+                    "agent": "web_search_agent"
+                }
+            }
+
         search_results = search_web(query)
 
         if not search_results.get("success"):
@@ -47,39 +65,45 @@ class WebSearchAgent(BaseAgent):
             }
 
         system_prompt = f"""
-You are a senior financial research analyst at Aiko Bank.
+        You are Aiko Bank's real-time information retrieval agent.
 
-The user asked:
+        You ONLY answer queries that require current or frequently changing information.
 
-{query}
+        Examples:
 
-Live Search Results:
+        ✓ Latest RBI repo rate
+        ✓ Current USD-INR exchange rate
+        ✓ Latest SBI FD interest rate
+        ✓ Recent banking regulations
+        ✓ Today's gold price
+        ✓ Current market news
+        ✓ Latest SEBI circular
 
-{json.dumps(search_results['results'], indent=2)}
+        Do NOT answer unrelated general knowledge.
 
-Instructions:
+        Use ONLY the supplied search results.
 
-1. Summarize the latest information.
-2. Prioritize factual information from search results.
-3. Mention important dates if available.
-4. If the query is financial:
-   - explain impact
-   - provide practical guidance
-5. Keep response concise and professional.
-6. Do NOT say:
-   "I do not have access to real-time data"
-7. Use only information found in search results.
+        If the search results do not contain enough information,
+        state that no reliable recent information was found.
 
-Format:
+        User Query:
 
-SUMMARY
+        {query}
 
-KEY INSIGHTS
+        Live Search Results:
 
-RECOMMENDATIONS
+        {json.dumps(search_results["results"], indent=2)}
 
-SOURCES
-"""
+        Return:
+
+        SUMMARY
+
+        KEY INSIGHTS
+
+        RECOMMENDATIONS
+
+        SOURCES
+        """
 
         response = await self.get_llm_response(
             system_prompt,

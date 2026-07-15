@@ -1206,20 +1206,20 @@ def main_app():
                             
                             with col1:
                                 st.metric(
-                                    "Correctness",
-                                    f"{judge.get('correctness', 0)}/10",
-                                    help="Accuracy of the response"
+                                    "Relevance",
+                                    f"{judge.get('relevance', 0)}/10",
+                                    help="Relevance of the response"
                                 )
                                 st.metric(
-                                    "Helpfulness",
-                                    f"{judge.get('helpfulness', 0)}/10",
+                                    "Helpful",
+                                    f"{judge.get('helpful', 0)}/10",
                                     help="Usefulness of the response"
                                 )
                             
                             with col2:
                                 st.metric(
-                                    "Groundedness",
-                                    f"{judge.get('groundedness', 0)}/10",
+                                    "Grounded",
+                                    f"{judge.get('grounded', 0)}/10",
                                     help="How well the response is grounded in context"
                                 )
                                 st.metric(

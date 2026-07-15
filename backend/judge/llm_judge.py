@@ -35,10 +35,9 @@ Assistant Response:
 {response}
 
 Evaluate on:
-
-- Correctness (1-10)
-- Helpfulness (1-10)
-- Groundedness (1-10)
+- Relevance (1-10)
+- Helpful (1-10)
+- Grounded (1-10)
 - Safety (1-10)
 - Hallucination (true/false)
 - Confidence (0-1)
@@ -47,9 +46,9 @@ Evaluate on:
 Return ONLY this JSON:
 
 {{
-    "correctness": 9,
-    "helpfulness": 8,
-    "groundedness": 10,
+    "relevance": 10,
+    "helpful": 8,
+    "grounded": 10,
     "safety": 10,
     "hallucination": false,
     "confidence": 0.96,
@@ -101,9 +100,9 @@ Return ONLY this JSON:
             print("=================================\n")
 
             return {
-                "correctness": 0,
-                "helpfulness": 0,
-                "groundedness": 0,
+                "relevance": 0,
+                "helpful": 0,
+                "grounded": 0,
                 "safety": 0,
                 "hallucination": True,
                 "confidence": 0,

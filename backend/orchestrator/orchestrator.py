@@ -111,9 +111,9 @@ class Orchestrator:
             print(f"Judge evaluation failed: {e}")
             # Return a default dictionary to avoid None causing Pydantic validation errors
             return {
-                "correctness": 0.0,
-                "helpfulness": 0.0,
-                "groundedness": 0.0,
+                "relevance": 0.0,
+                "helpful": 0.0,
+                "grounded": 0.0,
                 "safety": 0.0,
                 "hallucination": True,
                 "confidence": 0.0,
@@ -184,6 +184,8 @@ class Orchestrator:
                     chat_span.set_attribute("blocked", True)
                     chat_span.set_attribute("block_reason", reason)
                     chat_span.set_attribute("success", False)
+                    chat_span.set_attribute("block_type", "kill_switch")  # NEW
+                    chat_span.set_attribute("matched_pattern", reason)    # NEW
                     chat_span.add_event("Request blocked by kill switch")
                     
                     # Return blocked response
@@ -235,32 +237,47 @@ class Orchestrator:
                     print(analysis)
                     print("==============================")
 
+                    # Check if out of scope first
+                    if primary_domain == "out_of_scope":
+                        chat_span.set_attribute("blocked", True)
+                        chat_span.set_attribute("block_reason", "out_of_scope")
+                        chat_span.set_attribute("block_type", "scope_guard")  # NEW
+                        chat_span.add_event("Request blocked - out of scope")
+                        
+                        return {
+                            "success": False,
+                            "response": (
+                                "I'm Aiko Bank's AI assistant. "
+                                "I can help with banking, loans, investments, travel, taxes, legal information, financial calculations, uploaded documents, and financial news. "
+                                "I can't answer unrelated general knowledge questions."
+                            ),
+                            "analysis": analysis,
+                            "agents_used": [],
+                            "judge": {}
+                        }
+
                     # DOCUMENT MODE OVERRIDE
-
                     if has_documents:
-
                         print("\n========== DOCUMENT MODE ==========")
                         print("FORCING RAG ONLY")
                         print("===================================")
-
                         domains = ["rag"]
 
                     # NORMAL ROUTING
-
                     else:
-
                         domains = []
 
-                        if primary_domain != "general":
+                        # CHANGED: Check for out_of_scope instead of general
+                        if primary_domain != "out_of_scope":
                             domains.append(primary_domain)
 
                         domains.extend(secondary_domains)
-
                         domains = list(dict.fromkeys(domains))
 
                     # Set agents attribute on chat_request trace
                     chat_span.set_attribute("agents", str(domains))
                     chat_span.set_attribute("agent_count", len(domains))
+                    chat_span.set_attribute("routing_confidence", analysis.get("confidence", 0.0))  # NEW
                     router_span.set_attribute("routed_agents", str(domains))
                     router_span.add_event("Routing analysis completed")
 
@@ -268,43 +285,25 @@ class Orchestrator:
                     print(domains)
                     print("=============================")
 
+                # CHANGED: No more fallback to general Groq
                 if not domains:
-
-                    response = await self.handle_general_query(
-                        query,
-                        history
-                    )
-
-                    self.save_message(
-                        user_id,
-                        "assistant",
-                        response
-                    )
-
-                    # Set success attribute
-                    chat_span.set_attribute("success", True)
-                    chat_span.add_event("Chat request completed")
+                    chat_span.set_attribute("blocked", True)
+                    chat_span.set_attribute("block_reason", "no_domains_found")
+                    chat_span.set_attribute("block_type", "scope_guard")  # NEW
+                    chat_span.set_attribute("routing_confidence", analysis.get("confidence", 0.0))  # NEW
+                    chat_span.add_event("Request blocked - no domains found")
                     
-                    result = {
-                        "success": True,
-                        "response": response,
+                    return {
+                        "success": False,
+                        "response": (
+                            "I'm Aiko Bank's AI assistant. "
+                            "I can help with banking, loans, investments, travel, taxes, legal information, financial calculations, uploaded documents, and financial news. "
+                            "I can't answer unrelated general knowledge questions."
+                        ),
                         "analysis": analysis,
-                        "agents_used": ["groq"]
+                        "agents_used": [],
+                        "judge": {}
                     }
-                    
-                    # Run judge in background (fire and forget)
-                    if not skip_judge:
-                        # Evaluate response and store result
-                        judge_result = await self.evaluate_response(
-                            query=query,
-                            response=response,
-                            analysis=analysis,
-                            user_id=user_id
-                        )
-                        if judge_result:
-                            result["judge"] = judge_result
-                    
-                    return result
 
                 agent_results = []
                 successful_agents = []
@@ -404,49 +403,29 @@ class Orchestrator:
                             current_span.record_exception(e)
                             current_span.add_event("Agent execution failed")
 
-                # Fallback
-
+                # CHANGED: No more fallback to general Groq
                 if not agent_results:
-
-                    response = await self.handle_general_query(
-                        query,
-                        history
-                    )
-
-                    self.save_message(
-                        user_id,
-                        "assistant",
-                        response
-                    )
-
-                    # Set success attribute
-                    chat_span.set_attribute("success", True)
-                    chat_span.add_event("Chat request completed with fallback")
-
-                    result = {
-                        "success": True,
-                        "response": response,
-                        "analysis": analysis,
-                        "agents_used": ["groq"]
-                    }
+                    chat_span.set_attribute("success", False)
+                    chat_span.set_attribute("blocked", True)
+                    chat_span.set_attribute("block_reason", "all_agents_failed")
+                    chat_span.set_attribute("block_type", "scope_guard")  # NEW
+                    chat_span.set_attribute("routing_confidence", analysis.get("confidence", 0.0))  # NEW
+                    chat_span.add_event("Request failed - all agents failed")
                     
-                    # Run judge in background (fire and forget)
-                    if not skip_judge:
-                        judge_result = await self.evaluate_response(
-                            query=query,
-                            response=response,
-                            analysis=analysis,
-                            user_id=user_id
-                        )
-                        if judge_result:
-                            result["judge"] = judge_result
-
-                    return result
+                    return {
+                        "success": False,
+                        "response": (
+                            "I'm Aiko Bank's AI assistant. "
+                            "I can help with banking, loans, investments, travel, taxes, legal information, financial calculations, uploaded documents, and financial news. "
+                            "I can't answer unrelated general knowledge questions."
+                        ),
+                        "analysis": analysis,
+                        "agents_used": [],
+                        "judge": {}
+                    }
 
                 # Single Agent
-
                 if len(agent_results) == 1:
-
                     final_response = agent_results[0]
 
                 # Multi Agent Synthesis
@@ -467,6 +446,7 @@ class Orchestrator:
                 chat_span.set_attribute("success", True)
                 chat_span.set_attribute("successful_agents", str(successful_agents))
                 chat_span.set_attribute("primary_agent", successful_agents[0] if successful_agents else "groq")
+                chat_span.set_attribute("routing_confidence", analysis.get("confidence", 0.0))  # NEW
                 chat_span.add_event("Chat request completed")
 
                 result = {
@@ -519,50 +499,9 @@ class Orchestrator:
                 
                 return result
 
-    # GENERAL CHAT
-
-    async def handle_general_query(
-        self,
-        query,
-        history
-    ):
-
-        with tracer.start_as_current_span("General Chat") as span:
-            
-            span.set_attribute("query_length", len(query))
-            span.set_attribute("history_length", len(history))
-            span.set_attribute("llm_used", True)
-            span.add_event("General chat processing started")
-            
-            history_text = "\n".join(
-                [
-                    f"{m['role']}: {m['content']}"
-                    for m in history[-5:]
-                ]
-            )
-
-            prompt = f"""
-Conversation History:
-
-{history_text}
-
-User Query:
-
-{query}
-
-Respond naturally and conversationally.
-"""
-
-            result = await self.llm.process(
-                prompt,
-                user_id="general_chat"
-            )
-            
-            span.set_attribute("response_length", len(result))
-            span.set_attribute("success", True)
-            span.add_event("General chat processing completed")
-            
-            return result
+    # GENERAL CHAT - REMOVED/UNUSED
+    # The handle_general_query method is no longer used
+    # Keeping it for potential future use but it won't be called
 
     # SYNTHESIS
 
